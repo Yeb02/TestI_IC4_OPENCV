@@ -1,4 +1,8 @@
+#define NOMINMAX
 #include "Optimizer.h"
+
+#include "delaunator.h"
+
 #include "windows.h"
 
 #include <algorithm>
@@ -105,11 +109,11 @@ std::vector<std::vector<cv::Point2f>> Optimizer::OptFlow(std::vector<cv::Mat> im
 
 	vector<Point2f>& referencePoints = points[0];
 
-	const int MAX_POINTS_TRACKED = 500;
-	const double MIN_DISTANCE = 10.;
+	const int MAX_POINTS_TRACKED = 100;
+	const double MIN_DISTANCE = 30.;
 	const double QUALITY_LEVEL = .05; // default .3
 
-	// Points that are near the edges are likely to disappear from frame to frame due to distortions/vibrations.
+	// Points that are near the edges are likely to disappear from frame to frame due to distortions/vibrations. 
 	const int MARGIN_SIZE = 25;
 	Rect roi(MARGIN_SIZE, MARGIN_SIZE, reference.cols - 2 * MARGIN_SIZE, reference.rows - 2 * MARGIN_SIZE);
 
@@ -121,6 +125,84 @@ std::vector<std::vector<cv::Point2f>> Optimizer::OptFlow(std::vector<cv::Mat> im
 		referencePoints[i] += Point2f((float)MARGIN_SIZE, (float)MARGIN_SIZE);
 	}
 
+
+
+	constexpr bool TEST_DELAUNAY = false;
+	if (TEST_DELAUNAY) {
+
+		Mat mask = Mat::zeros(reference.size(), reference.type());
+
+		// additional points on the edges.
+		int nPointsPerSide = 5;
+
+		std::vector<double> coords(referencePoints.size() * 2 + nPointsPerSide * 4 * 2);
+		for (int i = 0; i < referencePoints.size(); i++)
+		{
+			circle(mask, referencePoints[i], 3, Scalar(255), -1);
+			coords[2 * i] = (double)referencePoints[i].x;
+			coords[2 * i + 1] = (double)referencePoints[i].y;
+		}
+
+		int offset = (int)referencePoints.size() * 2;
+
+		// Vertical edges
+		for (int i = 0; i < nPointsPerSide; i++)
+		{
+			double py0 = 0;
+			double py1 = (double)reference.rows;
+			double px = (double)i * (double)reference.cols / (double)nPointsPerSide;
+
+			coords[offset++] = px;
+			coords[offset++] = py0;
+			coords[offset++] = px;
+			coords[offset++] = py1;
+		}
+
+		// Horizontal edges
+		for (int i = 0; i < nPointsPerSide; i++)
+		{
+			double py = (double)(i + 1) * (double)reference.rows / (double)nPointsPerSide;
+			double px0 = 0;
+			double px1 = (double)reference.cols;
+
+			coords[offset++] = px0;
+			coords[offset++] = py;
+			coords[offset++] = px1;
+			coords[offset++] = py;
+		}
+
+		//triangulation happens here
+		delaunator::Delaunator d(coords);
+
+		for (std::size_t i = 0; i < d.triangles.size(); i += 3)
+		{
+			//printf(
+			//	"Triangle points: [[%f, %f], [%f, %f], [%f, %f]]\n",
+			//	d.coords[2 * d.triangles[i]],        //tx0
+			//	d.coords[2 * d.triangles[i] + 1],    //ty0
+			//	d.coords[2 * d.triangles[i + 1]],    //tx1
+			//	d.coords[2 * d.triangles[i + 1] + 1],//ty1
+			//	d.coords[2 * d.triangles[i + 2]],    //tx2
+			//	d.coords[2 * d.triangles[i + 2] + 1] //ty2
+			//);
+
+			Point2f p0((float)d.coords[2 * d.triangles[i]], (float)d.coords[2 * d.triangles[i] + 1]);
+			Point2f p1((float)d.coords[2 * d.triangles[i + 1]], (float)d.coords[2 * d.triangles[i + 1] + 1]);
+			Point2f p2((float)d.coords[2 * d.triangles[i + 2]], (float)d.coords[2 * d.triangles[i + 2] + 1]);
+
+			cv::line(mask, p0, p1, Scalar(255), 2);
+			cv::line(mask, p1, p2, Scalar(255), 2);
+			cv::line(mask, p2, p0, Scalar(255), 2);
+		}
+		cv::Mat result;
+		cv::add(reference, mask, result);
+
+		cv::imshow("Triangulation", result);
+		int keyboard = waitKey(0);
+	}
+
+
+
 	vector<Scalar> colors;
 	RNG rng;
 	for (int i = 0; i < MAX_POINTS_TRACKED; i++)
@@ -130,7 +212,6 @@ std::vector<std::vector<cv::Point2f>> Optimizer::OptFlow(std::vector<cv::Mat> im
 		colors.emplace_back(grayLevel);
 	}
 
-	
 
 	for (int i = 1; i < images.size(); i++)
 	{
@@ -156,13 +237,13 @@ std::vector<std::vector<cv::Point2f>> Optimizer::OptFlow(std::vector<cv::Mat> im
 
 				// draw the tracks
 				circle(mask, potentialPoints[j], 3, colors[j], -1);
-				line(mask, potentialPoints[j], referencePoints[j], Scalar(0), 1);
+				cv::line(mask, potentialPoints[j], referencePoints[j], Scalar(0), 1);
 			}
 		}
 		std::cout << "nMatches at step " << i << " : " << pointsDetectedInCurrentImage.size() << " / " << referencePoints.size() << std::endl;
 
 		Mat img;
-		add(images[i], mask, img);
+		cv::add(images[i], mask, img);
 
 		/*imshow("Frame", img);
 		int keyboard = waitKey(100);*/
@@ -176,111 +257,364 @@ std::vector<std::vector<cv::Point2f>> Optimizer::OptFlow(std::vector<cv::Mat> im
 }
 
 
-cv::Mat Optimizer::WarpStack(std::vector<cv::Mat> images, std::vector<vector<Point2f>> shiftedPoints)
+cv::Mat Optimizer::WarpStack(std::vector<cv::Mat> images, std::vector<vector<Point2f>> trackedPoints)
 {
-	vector<Point2f> barycentres(images.size());
+	const int UPSCALE_FACTOR = 2;
+	const int PADDING_SIZE = 30; // In pixels 
 
-	for (int i = 0; i < images.size(); i++)
-	{
-		barycentres[i] = Point2f(.0f, .0f);
-		for (int j = 0; j < shiftedPoints[i].size(); j++)
-		{
-			barycentres[i] += shiftedPoints[i][j];
-		}
-		barycentres[i] /= (float)shiftedPoints[i].size();
-	}
+	// additional points on the edges. Per edge, so total is 4x N_EDGE_POINTS
+	const int N_EDGE_POINTS = 5;
 
-	const int UPSCALE_FACTOR = 1;
-	const int MARGIN_SIZE = 30; // px
+	// between 0 and 100
+	const float STACKED_PERCENTILE = 10.f;
 
 	int LR_w = images[0].cols;
 	int LR_h = images[0].rows;
-	Size SR_size(LR_w * UPSCALE_FACTOR + MARGIN_SIZE * 2, LR_h * UPSCALE_FACTOR + MARGIN_SIZE * 2);
+	
 
+	vector<Point2f> barycentres(trackedPoints[0].size());
 
-	for (int i = 0; i < images.size(); i++)
+	// Compute the barycenter of each tracked point over the image sequence
 	{
-		images[i].convertTo(images[i], CV_32F); // Can happen as soon as calcOpticalFlowPyrLK has been called on the image, because it is the only reason we start with CV_8U in the first place
+		for (int j = 0; j < trackedPoints[0].size(); j++)
+		{
+			barycentres[j] = Point2f(.0f, .0f);
+		}
+		for (int i = 0; i < images.size(); i++)
+		{
+			if (trackedPoints[i].size() != trackedPoints[0].size())
+			{
+				__debugbreak();
+			}
+			for (int j = 0; j < trackedPoints[i].size(); j++)
+			{
+				barycentres[j] += trackedPoints[i][j];
+			}
+		}
+		for (int j = 0; j < trackedPoints[0].size(); j++)
+		{
+			barycentres[j] /= (float)images.size();
+		}
 	}
-
-
-	Mat stack = cv::Mat::zeros(SR_size, CV_32F);
-	Mat maskStack(SR_size, CV_32F, Scalar(.00001f)); // Initial value to avoid divisions by 0 later.
 
 	
-	cv::Mat upsizeBuffer(Size(LR_w * UPSCALE_FACTOR, LR_h * UPSCALE_FACTOR), CV_32F);
-	cv::Mat translatedBuffer(SR_size, CV_32F);
-	cv::Mat laplacian(images[0].size(), CV_32F);
-	cv::Mat mask(SR_size, CV_8U);
+	std::vector<double> coords(barycentres.size() * 2 + N_EDGE_POINTS * 4 * 2);
 
-
-	Point2f refBarycentre = barycentres[0];
-	for (int i = 0; i < images.size(); i++) 
+	// Fill coords with the barycenters and add the edge points
 	{
-		// Sharpness mask
+		for (int i = 0; i < barycentres.size(); i++)
 		{
-			cv::Laplacian(images[i], laplacian, CV_32F);
-
-			const int MASK_DECIMATION = 10;
-			const float LAPLACIAN_VARIANCE_THRESHOLD = 3.f;
-
-			cv::Mat lowResMask = Mat::zeros(Size(LR_w / MASK_DECIMATION, LR_h / MASK_DECIMATION), CV_8U); // TODO cover the whole image
-
-			for (int X = 0; X < lowResMask.cols; X++)
-			{
-				for (int Y = 0; Y < lowResMask.rows; Y++)
-				{
-					Rect _roi(X * MASK_DECIMATION, Y * MASK_DECIMATION, MASK_DECIMATION, MASK_DECIMATION);
-					Scalar var, mean;
-					cv::meanStdDev(images[i](_roi), mean, var);
-					//lowResMask.at<float>(Y, X) = (float)var[0]*.2f;
-					lowResMask.at<char>(Y, X) = (float)var[0] > LAPLACIAN_VARIANCE_THRESHOLD ? 1 : 0;
-				}
-			}
-
-			cv::resize(lowResMask, mask, mask.size(), 0, 0, INTER_NEAREST);
+			coords[2 * i] = (double)barycentres[i].x;
+			coords[2 * i + 1] = (double)barycentres[i].y;
 		}
 
-		
+		int offset = (int)barycentres.size() * 2;
 
-		// nearest neighbor, as per "sharp stack"
+
+		// The edge points are 2 pixels inwards, to avoid edge cases later, especially when computin the bounding rects of mesh triangles.
+
+		// Vertical edges
+		for (int i = 0; i < N_EDGE_POINTS; i++)
 		{
-			
+			double py0 = 2;
+			double py1 = (double)LR_h - 2;
+			double px = 2 + (double)i * (double)(LR_w - 4) / (double)N_EDGE_POINTS;
+
+			coords[offset++] = px;
+			coords[offset++] = py0;
+			coords[offset++] = px;
+			coords[offset++] = py1;
 		}
 
-		// Averaging
+		// Horizontal edges
+		for (int i = 0; i < N_EDGE_POINTS; i++)
 		{
-			Point2f offset = Point2f((float)MARGIN_SIZE, (float)MARGIN_SIZE) + barycentres[i] - refBarycentre;
-			offset.x = std::clamp(offset.x, 0.f, (float)(2 * MARGIN_SIZE));
-			offset.y = std::clamp(offset.y, 0.f, (float)(2 * MARGIN_SIZE));
+			double py = 2 + (double)(i + 1) * (double)(LR_h - 4) / (double)N_EDGE_POINTS;
+			double px0 = 2;
+			double px1 = (double)LR_w - 2;
 
-			upsizeBuffer.setTo(.0f);
-			cv::resize(images[i], upsizeBuffer, upsizeBuffer.size()); // not in place because we dont want to overwrite the original image
-
-			std::cout << "Image " << i << ", offset x = " << offset.x << ", offset y = " << offset.y << std::endl;
-
-			Mat warpMat = Mat::zeros(Size(3, 2), CV_32F);
-			warpMat.at<float>(0, 0) = 1.f;
-			warpMat.at<float>(1, 1) = 1.f;
-			warpMat.at<float>(0, 2) = offset.x;
-			warpMat.at<float>(1, 2) = offset.y;
-
-			translatedBuffer.setTo(.0f);
-			cv::warpAffine(upsizeBuffer, translatedBuffer, warpMat, translatedBuffer.size(), INTER_LINEAR); // Cant operate in place
-
-			add(stack, translatedBuffer, stack, mask);
-
-			
-			add(maskStack, mask, maskStack, noArray(), CV_32F);
+			coords[offset++] = px0;
+			coords[offset++] = py;
+			coords[offset++] = px1;
+			coords[offset++] = py;
 		}
 	}
 
-	imwrite("stack.png", stack);
 
-	cv::divide(stack, maskStack, stack, 1.f/255.f);
+	// Triangulation happens here
+	delaunator::Delaunator d(coords);
 
 
-	imshow("Stack", stack);
+
+	bool SHOW_WARPS = !true;
+	if (SHOW_WARPS) {
+		for (int i = 0; i < images.size(); i++)
+		{
+			// Create a mask image for drawing purposes
+			Mat mask = Mat::zeros(images[0].size(), images[0].type());
+
+			for (uint j = 0; j < trackedPoints[i].size(); j++)
+			{
+				circle(mask, trackedPoints[i][j], 3, Scalar(255), -1);
+			}
+
+			for (int p = 0; p < barycentres.size(); p++)
+			{
+				coords[2 * p] = (double)trackedPoints[i][p].x;
+				coords[2 * p + 1] = (double)trackedPoints[i][p].y;
+			}
+
+			for (std::size_t t = 0; t < d.triangles.size(); t += 3)
+			{
+				Point2f p0((float)coords[2 * d.triangles[t]], (float)coords[2 * d.triangles[t] + 1]);
+				Point2f p1((float)coords[2 * d.triangles[t + 1]], (float)coords[2 * d.triangles[t + 1] + 1]);
+				Point2f p2((float)coords[2 * d.triangles[t + 2]], (float)coords[2 * d.triangles[t + 2] + 1]);
+
+				cv::line(mask, p0, p1, Scalar(255), 2);
+				cv::line(mask, p1, p2, Scalar(255), 2);
+				cv::line(mask, p2, p0, Scalar(255), 2);
+			}
+
+			Mat img;
+			cv::add(images[i], mask, img);
+
+			cv::imshow("Frame", img);
+			int keyboard = waitKey(1000);
+
+			//if (keyboard == 'q' || keyboard == 27)
+			//	cv::destroyWindow("Frame");
+			//	break;
+		}
+	}
+
+
+
+
+	// Create a vector of vectors, containing for each triangle of the mesh the vector of measured sharpness over the image sequence.
+	std::vector<std::vector<float>> sharpness(d.triangles.size()/3);
+	for (int j = 0; j < d.triangles.size(); j += 3) sharpness[j/3].resize(images.size());
+	
+	// Buffer to avoid reallocs
+	cv::Mat laplacian(images[0].size(), CV_32F);
+
+
+	// Is here, but could happen as soon as calcOpticalFlowPyrLK has been called on the image, because it is the only reason images are in CV_8U in the first place
+	for (int i = 0; i < images.size(); i++)
+	{
+		images[i].convertTo(images[i], CV_32F);
+
+#ifdef _DEBUG
+		images[i] /= 255.f;
+#endif
+	}
+	
+
+	// fill sharpness with the appropriate values.
+	for (int i = 0; i < images.size(); i++)
+	{
+		cv::Laplacian(images[i], laplacian, CV_32F);
+
+		// d.coords is a deep copy of coords. It holds the barycenters, but we want to use the positions of the triangle in the i-th image, 
+		// so we reuse (overwrite) coord with those positions in the i-th image. (Avoids us the reallocation, and rewriting the edge points)
+
+		for (int j = 0; j < trackedPoints[i].size(); j++)
+		{
+			coords[2 * j] = (double)trackedPoints[i][j].x;
+			coords[2 * j + 1] = (double)trackedPoints[i][j].y;
+		}
+
+
+		
+		for (int j = 0; j < d.triangles.size(); j+=3)
+		{
+			Scalar varLaplacian;
+			Scalar meanLaplacian;
+
+			Point2i p0((int)coords[2 * d.triangles[j]],     (int)coords[2 * d.triangles[j] + 1]);
+			Point2i p1((int)coords[2 * d.triangles[j + 1]], (int)coords[2 * d.triangles[j + 1] + 1]);
+			Point2i p2((int)coords[2 * d.triangles[j + 2]], (int)coords[2 * d.triangles[j + 2] + 1]);
+
+			std::vector<Point2i> triangle{ p0, p1, p2 };
+
+			// Should not use boundingRect, because it sucks.
+			cv::Rect _roi = cv::boundingRect(triangle); 
+			cv::Mat _mask = cv::Mat::zeros(Size(_roi.width, _roi.height), CV_8U);
+
+			triangle[0] -= _roi.tl();
+			triangle[1] -= _roi.tl();
+			triangle[2] -= _roi.tl();
+
+			cv::fillConvexPoly(_mask, triangle, 1);
+
+			cv::meanStdDev(images[i](_roi), meanLaplacian, varLaplacian, _mask);
+
+			sharpness[j/3][i] = (float) varLaplacian[0];
+		}
+	}
+	
+	
+	
+	// TODO move the edge points from the i-th barycenter's offset when unwarping
+
+	// TODO nearest neighbor, as per "sharp stack"
+
+
+	Size SR_size(LR_w * UPSCALE_FACTOR + PADDING_SIZE * 2, LR_h * UPSCALE_FACTOR + PADDING_SIZE * 2);
+	Mat stack = cv::Mat::zeros(SR_size, CV_32F);
+	Mat normalizer = cv::Mat::zeros(SR_size, CV_32F);
+
+	// preallocated. The to-be-sorted images ids in the sequence.
+	std::vector<int> ids(images.size());
+
+	// For each triangle, sort its warped (i.e. original) versions in all images by sharpness, unwarp and stack the sharpest fraction 
+	for (int j = 0; j < d.triangles.size(); j+=3)
+	{
+		// sort ids by sharpness
+		for (int i = 0; i < images.size(); i++) ids[i] = i;
+		std::sort(ids.begin(), ids.end(),
+			[&](int id_a, int id_b) {
+				return sharpness[j/3][id_a] < sharpness[j/3][id_b];
+			});
+
+
+		std::vector<Point2f> dstTri(3);
+
+		cv::Rect _dstROI; // a bounding box containing the triangle in the stack, slighlty wider because the trianlge coordinates are floats and ROI are ints
+		{
+			double maxX = std::numeric_limits<double>::min();
+			double minX = std::numeric_limits<double>::max();
+			double maxY = std::numeric_limits<double>::min();
+			double minY = std::numeric_limits<double>::max();
+
+			for (int t = 0; t < 3; t++)
+			{
+				maxX = std::max(maxX, d.coords[2 * d.triangles[j + t]]);
+				minX = std::min(minX, d.coords[2 * d.triangles[j + t]]);
+				maxY = std::max(maxY, d.coords[2 * d.triangles[j + t] + 1]);
+				minY = std::min(minY, d.coords[2 * d.triangles[j + t] + 1]);
+			}
+
+			_dstROI.x = (int) std::floor(minX);
+			_dstROI.y = (int) std::floor(minY);
+			_dstROI.width  = (int) std::ceil(maxX) - _dstROI.x;
+			_dstROI.height = (int) std::ceil(maxY) - _dstROI.y;
+
+			_dstROI.x = _dstROI.x * UPSCALE_FACTOR + PADDING_SIZE;
+			_dstROI.y = _dstROI.y * UPSCALE_FACTOR + PADDING_SIZE;
+			_dstROI.width  *= UPSCALE_FACTOR;
+			_dstROI.height *= UPSCALE_FACTOR;
+		}
+
+
+		// unwarp and stack
+		int nBest = (int)((float)images.size() * STACKED_PERCENTILE / 100.f);
+		for (int i = 0; i < nBest; i++)
+		{
+			int _id = ids[i];
+
+			// We use "coords" as the array holding the position of the points in the _id-th image, and "d.coords"  for the positions of the barycenters.
+			// d.coords holds the correct values, but coords needs be filled.
+			for (int t = 0; t < 3; t++)
+			{
+				if (d.triangles[j + t] < trackedPoints[_id].size()) // i.e. if this point of the triangle is not one of the manually added edge points
+				{
+					coords[2 * d.triangles[j + t]]     = trackedPoints[_id][d.triangles[j + t]].x;
+					coords[2 * d.triangles[j + t] + 1] = trackedPoints[_id][d.triangles[j + t]].y;
+				}
+				else
+				{
+					// Nothing as this is a point on the edge so it has not moved
+					// TODO here is the barycentric shift ?
+				}
+			}
+			
+
+			cv::Rect _srcROI; // a bounding box containing the triangle in the _id-th image, slighlty wider because the trianlge coordinates are floats and ROI are ints
+			{
+				double maxX = std::numeric_limits<double>::min();
+				double minX = std::numeric_limits<double>::max();
+				double maxY = std::numeric_limits<double>::min();
+				double minY = std::numeric_limits<double>::max();
+
+				for (int t = 0; t < 3; t++)
+				{
+					maxX = std::max(maxX, coords[2 * d.triangles[j + t]]);
+					minX = std::min(minX, coords[2 * d.triangles[j + t]]);
+					maxY = std::max(maxY, coords[2 * d.triangles[j + t] + 1]);
+					minY = std::min(minY, coords[2 * d.triangles[j + t] + 1]);
+				}
+
+				_srcROI.x = (int) std::floor(minX);
+				_srcROI.y = (int) std::floor(minY);
+				_srcROI.width  = (int) std::ceil(maxX) - _srcROI.x;
+				_srcROI.height = (int) std::ceil(maxY) - _srcROI.y;
+			}
+
+
+			// Triangles with float coordinates, used to determine the affine mapping between the triangle in the _id-th image and in the stack:
+
+
+			Point2f srcP0((float)coords[2 * d.triangles[j]],     (float)coords[2 * d.triangles[j]     + 1]);
+			Point2f srcP1((float)coords[2 * d.triangles[j + 1]], (float)coords[2 * d.triangles[j + 1] + 1]);
+			Point2f srcP2((float)coords[2 * d.triangles[j + 2]], (float)coords[2 * d.triangles[j + 2] + 1]);
+
+			std::vector<Point2f> srcTri{ srcP0 - (Point2f)_srcROI.tl(), srcP1 - (Point2f)_srcROI.tl(), srcP2 - (Point2f)_srcROI.tl() };
+			
+			coords[0] += 1.;
+
+			Point2f dstP0((float)d.coords[2 * d.triangles[j]],     (float)d.coords[2 * d.triangles[j]     + 1]);
+			Point2f dstP1((float)d.coords[2 * d.triangles[j + 1]], (float)d.coords[2 * d.triangles[j + 1] + 1]);
+			Point2f dstP2((float)d.coords[2 * d.triangles[j + 2]], (float)d.coords[2 * d.triangles[j + 2] + 1]);
+
+			dstP0 = dstP0 * UPSCALE_FACTOR + Point2f(PADDING_SIZE, PADDING_SIZE);
+			dstP1 = dstP1 * UPSCALE_FACTOR + Point2f(PADDING_SIZE, PADDING_SIZE);
+			dstP2 = dstP2 * UPSCALE_FACTOR + Point2f(PADDING_SIZE, PADDING_SIZE);
+
+			dstTri[0] = dstP0 - (Point2f)_dstROI.tl();
+			dstTri[1] = dstP1 - (Point2f)_dstROI.tl();
+			dstTri[2] = dstP2 - (Point2f)_dstROI.tl();
+			
+
+
+			// Not really used as a conventional mask: once warped and upscaled by the affine transform, it is used to multiply termwise to carve out
+			// an antialiased triangle, and is kept in the "normalizer" matrix for the normalization of the stack at the end.
+			cv::Mat triangleMask = cv::Mat::zeros(_srcROI.size(), CV_32F);
+			std::vector<Point2i> srcTri_INT {(Point2i)srcTri[0], (Point2i)srcTri[1], (Point2i)srcTri[2]};
+
+			cv::fillConvexPoly(triangleMask, srcTri_INT, 1.f); // Requires int coordinates
+			// For some reason, it wont draw antialiased lines unless the type is CV_8U. Since anti aliasing is not strictly necessary, we dont do it.
+			//cv::fillConvexPoly(triangleMask, srcTri_INT, 1.f, cv::LINE_AA); 
+
+
+			Mat warp_mat = getAffineTransform(srcTri, dstTri);
+
+			Mat warpedRoi = Mat::zeros(_dstROI.size(), CV_32F);
+			Mat warpedMask = Mat::zeros(_dstROI.size(), CV_32F);
+
+			cv::warpAffine(images[_id](_srcROI), warpedRoi,  warp_mat, warpedRoi.size());
+			cv::warpAffine(triangleMask        , warpedMask, warp_mat, warpedMask.size());
+
+			cv::multiply(warpedRoi, warpedMask, warpedRoi);
+
+			cv::add(warpedRoi,  stack(_dstROI),      stack(_dstROI));
+			cv::add(warpedMask, normalizer(_dstROI), normalizer(_dstROI));
+		}
+	}
+	
+
+
+	// Normalize
+	cv::divide(stack, normalizer, stack);
+
+#ifdef _DEBUG
+	stack *= 255.f; // images were put in [0,1] for visualization
+#endif
+
+	stack.convertTo(stack, CV_8U);
+
+	cv::imwrite("stack2.png", stack);
+
+	cv::imshow("Stack", stack);
 
 	int keyboard = waitKey(0);
 		
