@@ -173,7 +173,7 @@ struct DelaunatorPoint {
 class Delaunator {
 
 public:
-    std::vector<double> const& coords;
+    std::vector<double> coords;
     std::vector<std::size_t> triangles;
     std::vector<std::size_t> halfedges;
     std::vector<std::size_t> hull_prev;
@@ -181,7 +181,7 @@ public:
     std::vector<std::size_t> hull_tri;
     std::size_t hull_start;
 
-    Delaunator(std::vector<double> const& in_coords);
+    Delaunator(std::vector<double> const in_coords);
 
     double get_hull_area();
 
@@ -204,8 +204,7 @@ private:
     void link(std::size_t a, std::size_t b);
 };
 
-Delaunator::Delaunator(std::vector<double> const& in_coords)
-    : coords(in_coords),
+Delaunator::Delaunator(std::vector<double> const in_coords) :
       triangles(),
       halfedges(),
       hull_prev(),
@@ -217,6 +216,10 @@ Delaunator::Delaunator(std::vector<double> const& in_coords)
       m_center_y(),
       m_hash_size(),
       m_edge_stack() {
+
+    // I (yeb) changed it to a deep copy
+    coords = in_coords;
+
     std::size_t n = coords.size() >> 1;
 
     double max_x = std::numeric_limits<double>::min();

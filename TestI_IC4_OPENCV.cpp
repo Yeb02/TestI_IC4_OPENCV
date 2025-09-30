@@ -16,7 +16,9 @@ int main()
 
 	auto pointVecs = optimizer.OptFlow(imVec);
 
-	auto stack = optimizer.WarpStack(imVec, pointVecs);
+	//auto stack = optimizer.WarpStack(imVec, pointVecs);
+	//auto stack = optimizer.ShiftStack(imVec, pointVecs);
+	auto stack = optimizer.RecursiveMatching(imVec, pointVecs);
 
 
 	//float factor = .25f;
