@@ -25,6 +25,8 @@ public:
 
 	cv::Mat RecursiveMatching(std::vector<cv::Mat> images, std::vector<std::vector<cv::Point2f>> shiftedPoints);
 
+	cv::Mat FullFrameSequentialMatcher(std::vector<cv::Mat> images);
+
 	//sigmaG is the variance of the gaussian PSF
 	cv::Mat LucyRichardson(cv::Mat src, int nIterations, float sigmaG);
 

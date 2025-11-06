@@ -11,10 +11,13 @@ int main()
 
 	Optimizer optimizer;
 
-	Optimizer::IMAGE_SEQ imSeq = Optimizer::IMAGE_SEQ::ARBRES_PROCHES; // TUILES_PROCHES, ARBRES_PROCHES, HORNISGRINDE_HD
+	Optimizer::IMAGE_SEQ imSeq = Optimizer::IMAGE_SEQ::HORNISGRINDE_HD; // TUILES_PROCHES, ARBRES_PROCHES, HORNISGRINDE_HD
 	auto imVec = optimizer.LoadAndPreProcess(imSeq);
 
-	auto pointVecs = optimizer.OptFlow(imVec);
+	auto stack = optimizer.FullFrameSequentialMatcher(imVec);
+
+
+	//auto pointVecs = optimizer.OptFlow(imVec);
 
 	
 	//optimizer.ShowBarycentricStabilization(imVec, pointVecs);
@@ -24,8 +27,10 @@ int main()
 
 	//auto stack = optimizer.RecursiveMatching(imVec, pointVecs);
 
+	
 
-	optimizer.DelaunayUnwarping(imVec, pointVecs);
+
+	//optimizer.DelaunayUnwarping(imVec, pointVecs);
 
 	//float factor = .25f;
 	//cv::Mat small;
