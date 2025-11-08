@@ -751,23 +751,6 @@ void Optimizer::ShowBarycentricStabilization(std::vector<cv::Mat> images, std::v
 
 
 
-// TODO manually, to allow for greater control and our richardson lucy variation. Later. Also this performs 2 bilinear interpolation instead of one.
-// Adds a small (sub pix) square from an image of the sequence to an exact square in the stack.  
-void addSquareToStack(cv::Mat srcIm, cv::Mat stack, int UPSCALE_FACTOR, Point2f imgOffset, Point2i xy)
-{
-	static Mat subPixRect(Size(SQUARE_SIZE, SQUARE_SIZE), CV_32F); // Static to avoid unnecessary reallocs.
-	static Mat upscaleRect(Size(SQUARE_SIZE * UPSCALE_FACTOR, SQUARE_SIZE * UPSCALE_FACTOR), CV_32F); // Static to avoid unnecessary reallocs.
-
-	Point2f halfSquare((float) SQUARE_SIZE / 2.f, (float) SQUARE_SIZE / 2.f);
-	Point2f center = (Point2f)xy - imgOffset + halfSquare;
-
-	getRectSubPix(srcIm, Size(SQUARE_SIZE, SQUARE_SIZE), center, subPixRect, CV_32F); // From CV_8U to CV_32F
-
-	Rect stackROI(xy.x * UPSCALE_FACTOR, xy.y * UPSCALE_FACTOR, SQUARE_SIZE * UPSCALE_FACTOR, SQUARE_SIZE * UPSCALE_FACTOR);
-	cv::resize(subPixRect, upscaleRect, Size(SQUARE_SIZE * UPSCALE_FACTOR, SQUARE_SIZE * UPSCALE_FACTOR), UPSCALE_FACTOR, UPSCALE_FACTOR, INTER_LINEAR);
-	cv::add(stack(stackROI), upscaleRect, stack(stackROI));
-}
-
 cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 {
 	const int N_REFERENCE_FRAMES = 10;
@@ -783,10 +766,13 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 	int nSquareY = (LR_h - 2*SQUARE_GRID_MARGINS) / SQUARE_SIZE;
 
 	// LK params
-	const int MARGIN_SIZE = 25;  // Points that are near the edges are likely to disappear from frame to frame due to distortions/vibrations. We ignore them.
+
+	const int MARGIN_SIZE = 10;  // Points that are near the edges are likely to disappear from frame to frame due to distortions/vibrations. We ignore them.
 	const int MAX_POINTS_TRACKED = 100;
-	const double MIN_DISTANCE = 20.;
-	const double QUALITY_LEVEL = .3; // default .3
+	const double MIN_DISTANCE = 10.;
+	const double QUALITY_LEVEL = .1; // default .3
+	const float ERR_REFERENCE_THRESHOLD = 2.f; 
+	const float ERR_SEQUENCE_THRESHOLD = 2.f;  
 	const int BLOCK_SIZE = 2 * 1 + 1;
 	const int GRADIENT_SIZE = 2 * 1 + 1;
 
@@ -804,10 +790,10 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 		goodFeaturesToTrack(images[i](featureFinderROI), referencePoints[i], MAX_POINTS_TRACKED, QUALITY_LEVEL, MIN_DISTANCE, Mat(), BLOCK_SIZE, GRADIENT_SIZE, false, 0.04);
 
 
-		//Size winSize = Size(BLOCK_SIZE / 2, BLOCK_SIZE / 2);
-		//Size zeroZone = Size(-1, -1);
-		//TermCriteria _criteria = TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 40, 0.001);
-		//cornerSubPix(images[i](featureFinderROI), referencePoints, winSize, zeroZone, _criteria);
+		Size winSize = Size(BLOCK_SIZE / 2, BLOCK_SIZE / 2);
+		Size zeroZone = Size(-1, -1);
+		TermCriteria _criteria = TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 40, 0.001);
+		cornerSubPix(images[i](featureFinderROI), referencePoints[i], winSize, zeroZone, _criteria);
 
 		for (int j = 0; j < referencePoints[i].size(); j++)
 		{
@@ -862,7 +848,7 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 				for (uint j = 0; j < potentialPoints.size(); j++)
 				{
 					// Select good points
-					if (status[j] == 1) {
+					if (status[j] == 1 && err[j] < ERR_REFERENCE_THRESHOLD) {
 						currentBarycenters[ref_id] += potentialPoints[j];
 						referenceBarycenters[ref_id] += referencePoints[ref_id][j];
 
@@ -940,6 +926,7 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 	}
 	
 
+	std::cout << "\nReference frames (" << N_REFERENCE_FRAMES << ") aligned.\n" << std::endl;
 
 	// Preallocated for efficiency. Reused for each image of the sequence, for each reference frame.
 	std::vector<Point2f> foundPointsCurr(MAX_POINTS_TRACKED);
@@ -981,6 +968,9 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 			calcOpticalFlowPyrLK(images[ref_id], images[i], referencePoints[ref_id], potentialPoints, status, err, Size(15, 15), 2, criteria, 0, 1.0E-3);
 
 #ifdef _DEBUG
+			Mat refIm = images[ref_id].clone();
+			Mat currIm = images[i].clone();
+
 			std::vector<Point2f> deltas(potentialPoints.size());
 #endif
 
@@ -990,12 +980,15 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 			for (uint j = 0; j < potentialPoints.size(); j++)
 			{
 				// Select good points
-				if (status[j] == 1) {
+				if (status[j] == 1 && err[j] < ERR_SEQUENCE_THRESHOLD) {
 					foundPointsCurr[nMatches] = potentialPoints[j];
 					foundPointsRef[nMatches] = referencePoints[ref_id][j];
 					nMatches++;
 					
 #ifdef _DEBUG
+					cv::circle(refIm, referencePoints[ref_id][j], 2, 255);
+					cv::circle(currIm, potentialPoints[j], 2, 255);
+
 					deltas[j] =  potentialPoints[j] - referencePoints[ref_id][j];
 #endif
 				}
@@ -1008,23 +1001,9 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 
 
 #ifdef _DEBUG
-			Point2f delta = currentBarycenters[ref_id] - referenceBarycenters[ref_id];
-			
-
 			int matHalfSize = 100;
 			float multiplier = 40.f;
 			Mat visu = Mat::zeros(Size(matHalfSize*2+1,matHalfSize*2+1), CV_8U);
-			{
-				int _x = (int) (delta.x * multiplier) + matHalfSize + 1;
-				_x = std::clamp(_x, 0, 2*matHalfSize);
-				int _y = (int) (delta.y * multiplier) + matHalfSize + 1;
-				_y = std::clamp(_y, 0, 2*matHalfSize);
-				visu.at<char>(_y+1, _x+1) = 255;
-				visu.at<char>(_y+1, _x) = 255;
-				visu.at<char>(_y, _x+1) = 255;
-				visu.at<char>(_y, _x) = 255;
-			}
-
 			vector<int> _ids(nMatches);
 			{
 				int _m = 0;
@@ -1051,13 +1030,12 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 				_x = std::clamp(_x, 0, 2*matHalfSize);
 				int _y = (int) (deltas[_j].y * multiplier) + matHalfSize + 1;
 				_y = std::clamp(_y, 0, 2*matHalfSize);
-				visu.at<char>(_y, _x) = (char)(255.f * (float)(_i+1) / (float)_ids.size());
+				visu.at<uchar>(_y, _x) = (uchar)(255.f * (float)(_i+1) / (float)_ids.size());
 			}
 
-			if (i > N_REFERENCE_FRAMES)
-			{
-				int a = 0;
-			}
+			
+			int a = 0;
+			
 #endif
 
 
@@ -1087,6 +1065,11 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 					locOffset += absoluteOffsets[ref_id];
 					
 					perPointAbsoluteOffset[i].at<Point2f>(y, x) += locOffset;
+
+					if (std::isnan<float>(perPointAbsoluteOffset[i].at<Point2f>(y, x).x))
+					{
+						int _bbb = 0;
+					}
 				}
 			}
 		}
@@ -1122,9 +1105,11 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 				sharpnesses[x][y][i] = (float)varLaplacian[0];
 			}
 		}
+
+		std::cout << "Sharpness, alignement : " << i  << std::endl;
 	}
 
-	std::cout << "acquisition part done" << std::endl;
+	std::cout << "\nSharpness computed and per pixel alignement of the sequence done. \n" << std::endl;
 
 
 
@@ -1139,6 +1124,17 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 
 	// Just the target number of the sharpest fragments to stack.
 	int nStackedSquares = (int)((float)images.size() * STACKED_PERCENTILE / 100.f);
+
+	// Preallocated for efficiency
+	Mat basePatch = Mat::zeros(Size(UPSCALE_FACTOR+2, UPSCALE_FACTOR+2), CV_32F);
+	basePatch(Rect(1,1,UPSCALE_FACTOR,UPSCALE_FACTOR)) = 1.f;
+	Mat shiftedPatch(Size(UPSCALE_FACTOR+1, UPSCALE_FACTOR+1), CV_32F);
+
+	// precomputed for efficiency
+	Point2f commonPatchCenter(
+		1.f + (float)UPSCALE_FACTOR / 2.f,
+		1.f + (float)UPSCALE_FACTOR / 2.f
+	);
 
 	for (int x = 0; x < nSquareX; x++)
 	{
@@ -1178,44 +1174,32 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 				{
 					for (int yy = seqimTopLeft.y; yy < seqimTopLeft.y + SQUARE_SIZE; yy++)
 					{
-						Point2f pixOffset = perPointAbsoluteOffset[id].at<Point2f>(yy, xx);
+						Point2f pixOffset = (float) UPSCALE_FACTOR * perPointAbsoluteOffset[id].at<Point2f>(yy, xx);
 						Point2f stackxxyy = Point2f((float)(UPSCALE_FACTOR * xx), (float)(UPSCALE_FACTOR * yy));
 						Point2f inStackPosition = stackxxyy + pixOffset;
 
-						
+						shiftedPatch = 0.0f;
 
 						float floor_x = floorf(inStackPosition.x);
-						float dx = inStackPosition.x - floor_x;
 						float floor_y = floorf(inStackPosition.y);
-						float dy = inStackPosition.y - floor_y;
+						Point2f fracCenterOffset = Point2f(inStackPosition.x - floor_x, inStackPosition.y - floor_y);
 
-						float v = (float) images[id].at<char>(yy, xx);
+						cv::getRectSubPix(basePatch, shiftedPatch.size(), commonPatchCenter - fracCenterOffset, shiftedPatch);
 
-						stack.at<float>(floor_x,      floor_y) += dx * dy * v;
-						normalizer.at<float>(floor_x, floor_y) += dx * dy;
+						Rect stackROI((int)floor_x, (int)floor_y, UPSCALE_FACTOR + 1, UPSCALE_FACTOR + 1);
 
-						stack.at<float>(floor_x + 1,      floor_y) += (1.f - dx) * dy * v;
-						normalizer.at<float>(floor_x + 1, floor_y) += (1.f - dx) * dy;
+						add(normalizer(stackROI), shiftedPatch, normalizer(stackROI));
 
-						stack.at<float>(floor_x,      floor_y + 1) += dx * (1.f - dy) * v;
-						normalizer.at<float>(floor_x, floor_y + 1) += dx * (1.f - dy);
+						shiftedPatch *= (float) images[id].at<uchar>(yy, xx);
 
-						stack.at<float>(floor_x + 1,      floor_y + 1) += (1.f - dx) * (1.f - dy) * v;
-						normalizer.at<float>(floor_x + 1, floor_y + 1) += (1.f - dx) * (1.f - dy);
+						add(stack(stackROI), shiftedPatch, stack(stackROI));
 					}
 				}
-				/*Rect _roi(x * SQUARE_SPACING + SQUARE_GRID_MARGINS - (int)registrationOffset.x, y * SQUARE_SPACING + SQUARE_GRID_MARGINS - (int)registrationOffset.y, SQUARE_SIZE, SQUARE_SIZE);
-
-				cv::meanStdDev(images[i](_roi), meanLaplacian, varLaplacian);
-
-				sharpnesses[x][y][i] = (float)varLaplacian[0];*/
-				
 			}
 		}
 	}
 
-	stack *= 1.f/((float)nStackedSquares);
-
+	cv::divide(stack, normalizer, stack);
 
 	
 	stack *= 1.f/255.f;
@@ -1647,7 +1631,7 @@ cv::Mat Optimizer::RecursiveMatching(std::vector<cv::Mat> images, std::vector<ve
 			}
 
 #ifdef _DEBUG
-			debugger.at<char>(y, x) = nEffectivelyStackedSquares;
+			debugger.at<uchar>(y, x) = nEffectivelyStackedSquares;
 #endif
 
 
