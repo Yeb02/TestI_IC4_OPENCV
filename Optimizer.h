@@ -9,10 +9,12 @@ class Optimizer
 {
 public:
 
-	enum IMAGE_SEQ {TUILES_PROCHES, ARBRES_PROCHES, HORNISGRINDE_HD};
+	enum IMAGE_SEQ {TUILES_PROCHES, ARBRES_PROCHES, HORNISGRINDE_HD, JARDIN};
+
 	IMAGE_SEQ imSeq;
 	std::string seqName;
 
+	std::vector<cv::Mat> OLD_LoadAndPreProcess(IMAGE_SEQ imSeq);
 	std::vector<cv::Mat> LoadAndPreProcess(IMAGE_SEQ imSeq);
 
 	// The returned points are quiet NANs when not found

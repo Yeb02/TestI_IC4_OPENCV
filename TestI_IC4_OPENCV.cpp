@@ -11,7 +11,7 @@ int main()
 
 	Optimizer optimizer;
 
-	Optimizer::IMAGE_SEQ imSeq = Optimizer::IMAGE_SEQ::TUILES_PROCHES; // TUILES_PROCHES, ARBRES_PROCHES, HORNISGRINDE_HD
+	Optimizer::IMAGE_SEQ imSeq = Optimizer::IMAGE_SEQ::HORNISGRINDE_HD; // TUILES_PROCHES, ARBRES_PROCHES, HORNISGRINDE_HD
 	auto imVec = optimizer.LoadAndPreProcess(imSeq);
 
 	auto stack = optimizer.FullFrameSequentialMatcher(imVec);

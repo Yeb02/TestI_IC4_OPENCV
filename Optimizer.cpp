@@ -23,8 +23,7 @@ using namespace std;
 
 
 
-
-std::vector<cv::Mat> Optimizer::LoadAndPreProcess(IMAGE_SEQ _imSeq)
+std::vector<cv::Mat> Optimizer::OLD_LoadAndPreProcess(IMAGE_SEQ _imSeq)
 {
 	//TUILES_PROCHES, ARBRES_PROCHES, HORNISGRINDE_HD};
 	imSeq = _imSeq;
@@ -143,9 +142,9 @@ std::vector<cv::Mat> Optimizer::LoadAndPreProcess(IMAGE_SEQ _imSeq)
 		auto c1 = channels[1];
 		auto c2 = channels[2];
 
-		//images.push_back(c1);
+		img = c1;
 
-		cvtColor(img, img, COLOR_BGR2GRAY);
+		//cvtColor(img, img, COLOR_BGR2GRAY);
 
 
 		if (i == 0)
@@ -162,6 +161,56 @@ std::vector<cv::Mat> Optimizer::LoadAndPreProcess(IMAGE_SEQ _imSeq)
 	return images;
 }
 
+std::vector<cv::Mat> Optimizer::LoadAndPreProcess(IMAGE_SEQ _imSeq)
+{
+	imSeq = _imSeq;
+	std::string folder;
+
+	switch (imSeq)
+	{
+	case JARDIN:
+		seqName = "JARDIN";
+		folder = "burst_j10_m11_a2025_12h_36m_32s";
+		break;
+	}
+
+
+	std::vector<cv::Mat> images;
+	Rect stackingROI;
+	for (int i = 0; i < 100; i++)
+	{
+		string filename = "C:\\Users\\alpha\\Desktop\\CSHR\\CSHR_2\\bursts\\" + folder + "\\im_" + std::to_string(i) + ".bmp";
+		cv::Mat img = cv::imread(filename);
+		if (img.empty())
+		{
+			throw std::runtime_error("Failed to load image: " + filename);
+		}
+
+
+		if (i == 0)
+		{
+			stackingROI = cv::selectROI(img);
+			std::cout << "\n SELECTED IMAGE ROI: " << stackingROI.x << " " << stackingROI.y << " " << stackingROI.width << " " << stackingROI.height << std::endl;
+			cv::destroyAllWindows();
+			//Rect stackingROI(1659, 422, 509, 375);
+		}
+
+		const bool toRGB = true;
+		if (toRGB)
+		{
+			cvtColor(img(stackingROI), img, COLOR_BayerRGGB2BGR);
+		}
+		else
+		{
+			img = img(stackingROI);
+
+		}
+
+		images.push_back(img);
+	}
+
+	return images;
+}
 
 std::vector<std::vector<cv::Point2f>> Optimizer::OptFlow(std::vector<cv::Mat> images)
 {
@@ -781,6 +830,7 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 
 	
 	vector<vector<Point2f>> referencePoints(N_REFERENCE_FRAMES);
+	
 
 	// Find the original features.
 	for (int i = 0; i < N_REFERENCE_FRAMES; i++)
@@ -805,9 +855,10 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 
 
 	// Contains the position of each frame relative to the first reference frame, which is considered to be the absolute referential. (therefore absoluteOffsets[0] = (0,0))
-	// If p = absoluteOffsets[ref_id], then ref_im[0]((x,y) + p) = ref_im[ref_id]((x,y)).
+	// If p = absoluteOffsets[ref_id], then ref_im[0]((x,y) + p) = ref_im[ref_id]((x,y)). (Coarsest approx. Initially necessary, then we will interpolate tracked points)
 	vector<Point2f> absoluteOffsets(N_REFERENCE_FRAMES);
 
+	vector<vector<Point2f>> referencePointsAbsoluteCoordinates(N_REFERENCE_FRAMES);
 
 	// Find the absoluteOffsets of the reference frames. 
 	{
@@ -815,16 +866,21 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 		vector<Point2f> referenceBarycenters(N_REFERENCE_FRAMES);
 		// Holds the barycenter of the points that were matched in this image with the ref frame.
 		vector<Point2f> currentBarycenters(N_REFERENCE_FRAMES);
+		
+		// positionOfReferencePointsInOtherReferences[i][j] holds the vector of positions in j of the features originating in i tracked in j.
+		vector<vector<vector<Point2f>>> positionOfReferencePointsInOtherReferences(N_REFERENCE_FRAMES);
+		for (int i = 0; i < N_REFERENCE_FRAMES; i++) positionOfReferencePointsInOtherReferences[i].resize(N_REFERENCE_FRAMES);
 
 		// A util to compute absoluteOffsets. If p = mutualRelativeOffsetsOfTheReferences[i][ref_id], then im[ref_id](x,y) = im[i](x+px,y+py) 
 		vector<vector<Point2f>> mutualRelativeOffsetsOfTheReferences(N_REFERENCE_FRAMES);
-		for (int ref_id = 0; ref_id < N_REFERENCE_FRAMES; ref_id++) mutualRelativeOffsetsOfTheReferences[ref_id].resize(N_REFERENCE_FRAMES);
 
 
 
 		// Match the LK points between frames
 		for (int i = 0; i < N_REFERENCE_FRAMES; i++)
 		{
+			mutualRelativeOffsetsOfTheReferences[i].resize(N_REFERENCE_FRAMES);
+
 			// Match the current frame to the reference frames.
 			for (int ref_id = 0; ref_id < N_REFERENCE_FRAMES; ref_id++)
 			{
@@ -845,25 +901,45 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 
 				int nMatches = 0;
 
-				for (uint j = 0; j < potentialPoints.size(); j++)
+				positionOfReferencePointsInOtherReferences[ref_id][i].resize(referencePoints[ref_id].size());
+
+				for (uint j = 0; j < referencePoints[ref_id].size(); j++)
 				{
 					// Select good points
 					if (status[j] == 1 && err[j] < ERR_REFERENCE_THRESHOLD) {
 						currentBarycenters[ref_id] += potentialPoints[j];
 						referenceBarycenters[ref_id] += referencePoints[ref_id][j];
 
+						// Note the order of indices
+						positionOfReferencePointsInOtherReferences[ref_id][i][j] = potentialPoints[j];
+
 						nMatches++;
+					}
+					else
+					{
+						// Note the order of indices
+						positionOfReferencePointsInOtherReferences[ref_id][i][j] = Point2f(std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::quiet_NaN());
 					}
 				}
 				//std::cerr << "nMatches at step " << i << " : " << nMatches << " / " << referencePoints[ref_id].size() << std::endl;
 
 				// TODO ransac
 
-				currentBarycenters[ref_id] /= (float)nMatches;
-				referenceBarycenters[ref_id] /= (float)nMatches;
+				if (nMatches > 0)
+				{
+					currentBarycenters[ref_id] /= (float)nMatches;
+					referenceBarycenters[ref_id] /= (float)nMatches;
+				}
+				else
+				{
+					std::cout << "NO MATCHES BETWEEN 2 REF FRAMES !!!" << std::endl;
+				}
+				
+				// fill the mutualRelativeOffsetsOfTheReferences matrix.
+				mutualRelativeOffsetsOfTheReferences[i][ref_id] = currentBarycenters[ref_id] - referenceBarycenters[ref_id];
 			}
 
-			// fill the mutualRelativeOffsetsOfTheReferences matrix.
+			
 			for (int ref_id = 0; ref_id < N_REFERENCE_FRAMES; ref_id++)
 			{
 				mutualRelativeOffsetsOfTheReferences[i][ref_id] = currentBarycenters[ref_id] - referenceBarycenters[ref_id];
@@ -892,6 +968,7 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 
 				for (int ref_id_i = 0; ref_id_i < N_REFERENCE_FRAMES; ref_id_i++)
 				{
+
 					for (int ref_id_j = 0; ref_id_j < N_REFERENCE_FRAMES; ref_id_j++)
 					{
 						currAbsolutePos[ref_id_i] += prevAbsolutePos[ref_id_j] - mutualRelativeOffsetsOfTheReferences[ref_id_i][ref_id_j];
@@ -923,14 +1000,53 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 			}
 			}*/
 		}
+
+
+
+		// Fill referencePointsAbsoluteCoordinates, combining information from positionOfReferencePointsInOtherReferences ant the barycentres.
+		for (int ref_id = 0; ref_id < N_REFERENCE_FRAMES; ref_id++)
+		{
+			referencePointsAbsoluteCoordinates[ref_id].resize(referencePoints[ref_id].size());
+
+			vector<int> nMatchesPerPoint(referencePoints[ref_id].size());
+			std::fill(nMatchesPerPoint.begin(), nMatchesPerPoint.end(), 0);
+
+			for (int matched_ref_id = 0; matched_ref_id < N_REFERENCE_FRAMES; matched_ref_id++)
+			{
+				if (ref_id == matched_ref_id) continue;
+
+				
+				for (uint j = 0; j < referencePoints[ref_id].size(); j++)
+				{
+					if (!std::isnan(positionOfReferencePointsInOtherReferences[ref_id][matched_ref_id][j].x)) {
+						referencePointsAbsoluteCoordinates[ref_id][j] += positionOfReferencePointsInOtherReferences[ref_id][matched_ref_id][j] + absoluteOffsets[ref_id];
+						nMatchesPerPoint[j]++;
+					}
+				}
+
+			}
+
+			for (uint j = 0; j < referencePoints[ref_id].size(); j++)
+			{
+				if (nMatchesPerPoint[j] > 0) {
+					referencePointsAbsoluteCoordinates[ref_id][j] /= (float) nMatchesPerPoint[j];
+				}
+				else
+				{
+					referencePointsAbsoluteCoordinates[ref_id][j] = absoluteOffsets[ref_id] + referencePoints[ref_id][j];
+				}
+			}
+		}
 	}
 	
 
 	std::cout << "\nReference frames (" << N_REFERENCE_FRAMES << ") aligned.\n" << std::endl;
 
-	// Preallocated for efficiency. Reused for each image of the sequence, for each reference frame.
+	// Preallocated for efficiency. Reused for each image of the sequence, for each reference frame. Contains the coordinates in the current image of the points tracked from the ref image. No NaNs.
 	std::vector<Point2f> foundPointsCurr(MAX_POINTS_TRACKED);
-	std::vector<Point2f> foundPointsRef(MAX_POINTS_TRACKED);
+
+	// Preallocated for efficiency. Reused for each image of the sequence, for each reference frame. Contains the absolute coordinates of the points tracked from the ref image that were found in the current one. No NaNs.
+	std::vector<Point2f> foundPointsRefAbsPos(MAX_POINTS_TRACKED);
 
 	// Matrix of vectors, (x,y) containing the vector of images.size() unsorted variances of the laplacians, 
 	// (x,y,i) being the variance in the subrect at (x*SQUARE_SPACING, y*SQUARE_SPACING) in absolute coordinates in i-th image of the sequence 
@@ -982,7 +1098,8 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 				// Select good points
 				if (status[j] == 1 && err[j] < ERR_SEQUENCE_THRESHOLD) {
 					foundPointsCurr[nMatches] = potentialPoints[j];
-					foundPointsRef[nMatches] = referencePoints[ref_id][j];
+					foundPointsRefAbsPos[nMatches] = referencePointsAbsoluteCoordinates[ref_id][j];
+
 					nMatches++;
 					
 #ifdef _DEBUG
@@ -1009,7 +1126,7 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 				int _m = 0;
 				for (uint j = 0; j < potentialPoints.size(); j++)
 				{
-					if (status[j] == 1)
+					if (status[j] == 1 && err[j] < ERR_SEQUENCE_THRESHOLD)
 					{
 						_ids[_m] = j;
 						_m++;
@@ -1057,19 +1174,13 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 						float invDSquared = 1.f / (.00001f + powf(foundPointsCurr[p].x - (float)x, 2.f) + powf(foundPointsCurr[p].y - (float)y, 2.f));
 
 						weightsSum += invDSquared;
-						locOffset += invDSquared * (foundPointsRef[p] - foundPointsCurr[p]); // TODO veryify that floating point errors are admissible
+						locOffset += invDSquared * (foundPointsRefAbsPos[p] - foundPointsCurr[p]); // TODO veryify that floating point errors are admissible
 					}
 
 					// If non 0 matches:
 					locOffset /= weightsSum;
-					locOffset += absoluteOffsets[ref_id];
 					
 					perPointAbsoluteOffset[i].at<Point2f>(y, x) += locOffset;
-
-					if (std::isnan<float>(perPointAbsoluteOffset[i].at<Point2f>(y, x).x))
-					{
-						int _bbb = 0;
-					}
 				}
 			}
 		}
@@ -1217,10 +1328,10 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 		float sigmas[nSigmas];
 		for (int i = 0; i < nSigmas; i++)
 		{
-			sigmas[i] = (float) UPSCALE_FACTOR + (float) (i-1) * .5f;
+			sigmas[i] = (float) UPSCALE_FACTOR * .5f * (1.f + (float) i);
 			deconv = LucyRichardson(toBeDeconv, 10, sigmas[i]);
 			deconv = LucyRichardson(toBeDeconv, 20, sigmas[i]);
-			deconv = LucyRichardson(toBeDeconv, 30, sigmas[i]);
+			//deconv = LucyRichardson(toBeDeconv, 30, sigmas[i]);
 
 			Mat deconv8U = deconv.clone() * 255.f;
 			deconv8U.convertTo(deconv8U, CV_8U);
