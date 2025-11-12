@@ -11,10 +11,17 @@ int main()
 
 	Optimizer optimizer;
 
-	Optimizer::IMAGE_SEQ imSeq = Optimizer::IMAGE_SEQ::HORNISGRINDE_HD; // TUILES_PROCHES, ARBRES_PROCHES, HORNISGRINDE_HD
-	auto imVec = optimizer.LoadAndPreProcess(imSeq);
 
-	auto stack = optimizer.FullFrameSequentialMatcher(imVec);
+	// JARDIN_NO_VIBRATION, JARDIN, HANGAR_1, HANGAR_2, HANGAR_ZOOM, ZI_FLOUE_1, ZI_FLOUE_2, ZI_3, PORT_DU_RHIN_1, CATHEDRALE_1,
+	// PORT_DU_RHIN_2, MAISON_1, MAISON_2, MAISON_3, GRAVIERE, ZI_4, USINE_1, USINE_2, MAISON_4
+	Optimizer::IMAGE_SEQ imSeq = Optimizer::IMAGE_SEQ::CATHEDRALE_1;
+
+	std::vector<cv::Mat> dstBayerImgs;
+	std::vector<cv::Mat> dstRGBImgs;
+
+	optimizer.LoadAndPreProcess(imSeq, dstBayerImgs, dstRGBImgs);
+
+	auto stack = optimizer.FullFrameSequentialMatcher(dstBayerImgs, dstRGBImgs);
 
 
 	//auto pointVecs = optimizer.OptFlow(imVec);

@@ -9,13 +9,15 @@ class Optimizer
 {
 public:
 
-	enum IMAGE_SEQ {TUILES_PROCHES, ARBRES_PROCHES, HORNISGRINDE_HD, JARDIN};
+	enum IMAGE_SEQ {
+		JARDIN_NO_VIBRATION, JARDIN, HANGAR_1, HANGAR_2, HANGAR_ZOOM, ZI_FLOUE_1, ZI_FLOUE_2, ZI_3,
+		PORT_DU_RHIN_1, CATHEDRALE_1, PORT_DU_RHIN_2, MAISON_1, MAISON_2, MAISON_3, GRAVIERE, ZI_4, USINE_1, USINE_2, MAISON_4
+	};
 
 	IMAGE_SEQ imSeq;
 	std::string seqName;
 
-	std::vector<cv::Mat> OLD_LoadAndPreProcess(IMAGE_SEQ imSeq);
-	std::vector<cv::Mat> LoadAndPreProcess(IMAGE_SEQ imSeq);
+	void LoadAndPreProcess(IMAGE_SEQ _imSeq, std::vector<cv::Mat>& dstBayerImgs, std::vector<cv::Mat>& dstRGBImgs);
 
 	// The returned points are quiet NANs when not found
 	std::vector<std::vector<cv::Point2f>> OptFlow(std::vector<cv::Mat> images);
@@ -25,9 +27,7 @@ public:
 	void ShowSharpnessRanking(std::vector<cv::Mat> images, std::vector<std::vector<cv::Point2f>> shiftedPoints);
 	void ShowBarycentricStabilization(std::vector<cv::Mat> images, std::vector<std::vector<cv::Point2f>> shiftedPoints);
 
-	cv::Mat RecursiveMatching(std::vector<cv::Mat> images, std::vector<std::vector<cv::Point2f>> shiftedPoints);
-
-	cv::Mat FullFrameSequentialMatcher(std::vector<cv::Mat> images);
+	cv::Mat FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, std::vector<cv::Mat> RGBImages);
 
 	//sigmaG is the variance of the gaussian PSF
 	cv::Mat LucyRichardson(cv::Mat src, int nIterations, float sigmaG);

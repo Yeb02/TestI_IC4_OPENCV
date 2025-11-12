@@ -21,166 +21,101 @@ using std::chrono::milliseconds;
 using namespace cv;
 using namespace std;
 
-
-
-std::vector<cv::Mat> Optimizer::OLD_LoadAndPreProcess(IMAGE_SEQ _imSeq)
-{
-	//TUILES_PROCHES, ARBRES_PROCHES, HORNISGRINDE_HD};
-	imSeq = _imSeq;
-	switch (imSeq)
-	{
-	case TUILES_PROCHES:
-		seqName = "TUILES_PROCHES";
-		break;
-	case ARBRES_PROCHES:
-		seqName = "ARBRES_PROCHES";
-		break;
-	case HORNISGRINDE_HD:
-		seqName = "HORNISGRINDE_HD";
-		break;
-	}
-
-	std::vector<cv::Mat> images;
-	Rect stackingROI;
-	for (int i = 0; i < 100; i++)
-	{
-		int sec0 = -1;
-		std::string base = "";
-
-		//img_99_j17_m09_a2025_10h_28m_37s
-		//img_0_j17_m09_a2025_10h_28m_34s
-
-
-		// TUILES PROCHES
-		//img_99_j17_m09_a2025_10h_26m_14s
-		//img_0_j17_m09_a2025_10h_26m_11s
-		//int sec0 = 11;
-		//const char* base = "_j17_m09_a2025_10h_26m_";
-
-		// ARBRES PROCHES
-		//img_99_j17_m09_a2025_10h_25m_33s
-		//img_0_j17_m09_a2025_10h_25m_30s
-		//int sec0 = 30;
-		//const char* base = "_j17_m09_a2025_10h_25m_";
-
-		//img_99_j17_m09_a2025_10h_23m_57s
-		//img_0_j17_m09_a2025_10h_23m_54s
-
-		//img_99_j16_m09_a2025_16h_16m_56s
-		//img_0_j16_m09_a2025_16h_16m_53s
-		//int sec0 = 53;
-		//const char* base = "_j16_m09_a2025_16h_16m_";
-
-
-		// HORNISGRINDE_HD
-		//img_99_j16_m09_a2025_16h_16m_23s
-		//img_0_j16_m09_a2025_16h_16m_19s
-		//int sec0 = 19;
-		//const char* base = "_j16_m09_a2025_16h_16m_";
-		
-
-		//img_99_j16_m09_a2025_16h_16m_10s
-		//img_0_j16_m09_a2025_16h_16m_06s
-		//int sec0 = 6;
-		//const char* base = "_j16_m09_a2025_16h_16m_";
-		
-
-		//img_99_j16_m09_a2025_16h_15m_40s
-		//img_0_j16_m09_a2025_16h_15m_37s
-
-
-		switch (imSeq)
-		{
-		case TUILES_PROCHES:
-			sec0 = 11;
-			base = "_j17_m09_a2025_10h_26m_";
-			break;
-		case ARBRES_PROCHES:
-			sec0 = 30;
-			base = "_j17_m09_a2025_10h_25m_";
-			break;
-		case HORNISGRINDE_HD:
-			sec0 = 19;
-			base = "_j16_m09_a2025_16h_16m_";
-			break;
-		}
-
-		
-		std::string incompleteFilename;
-		std::string filename;
-		for (int s = 0; s < 5; s++)
-		{
-			int sec = sec0 + s;
-			std::string secs = sec < 10 ? "0" + std::to_string(sec) : std::to_string(sec);
-			incompleteFilename = "C:\\Users\\alpha\\Desktop\\CSHR\\CSHR_2\\bursts\\img_" + std::to_string(i) + base + secs + "*";
-			WIN32_FIND_DATAA ffd;
-			HANDLE hFind = FindFirstFileA(incompleteFilename.c_str(), &ffd);
-
-			if (hFind != INVALID_HANDLE_VALUE)
-			{ 
-				filename = ffd.cFileName;
-				break;
-			}
-		}
-
-		/*do
-		{
-			std::string strFile = ffd.cFileName;
-		} while (FindNextFileA(hFind, &ffd) != 0);*/
-
-		cv::Mat img = cv::imread("C:\\Users\\alpha\\Desktop\\CSHR\\CSHR_2\\bursts\\" + filename);
-		if (img.empty())
-		{
-			throw std::runtime_error("Failed to load image: " + filename);
-		}
-
-		Mat channels[3];
-		cv::split(img, channels);
-
-		// For visualization only:
-		auto c0 = channels[0];
-		auto c1 = channels[1];
-		auto c2 = channels[2];
-
-		img = c1;
-
-		//cvtColor(img, img, COLOR_BGR2GRAY);
-
-
-		if (i == 0)
-		{
-			stackingROI = cv::selectROI(img);
-			std::cout << "\n SELECTED IMAGE ROI: " << stackingROI.x << " " << stackingROI.y << " " << stackingROI.width << " " << stackingROI.height << std::endl;
-			cv::destroyAllWindows();
-			//Rect stackingROI(1659, 422, 509, 375);
-		}
-
-		images.push_back(img(stackingROI));
-	}
-
-	return images;
-}
-
-std::vector<cv::Mat> Optimizer::LoadAndPreProcess(IMAGE_SEQ _imSeq)
+void Optimizer::LoadAndPreProcess(IMAGE_SEQ _imSeq, std::vector<cv::Mat>& dstBayerImgs, std::vector<cv::Mat>& dstRGBImgs)
 {
 	imSeq = _imSeq;
 	std::string folder;
 
 	switch (imSeq)
 	{
+	case JARDIN_NO_VIBRATION:
+		seqName = "JARDIN_NO_VIBRATION";
+		folder = "burst_j10_m11_a2025_12h_47m_56s";
+		break;
 	case JARDIN:
 		seqName = "JARDIN";
-		folder = "burst_j10_m11_a2025_12h_36m_32s";
+		folder = "burst_j10_m11_a2025_16h_11m_09s";
+		break;
+	case HANGAR_1:
+		seqName = "HANGAR_1";
+		folder = "burst_j11_m11_a2025_12h_05m_14s";
+		break;
+	case HANGAR_2:
+		seqName = "HANGAR_2";
+		folder = "burst_j11_m11_a2025_12h_07m_30s";
+		break;
+	case HANGAR_ZOOM:
+		seqName = "HANGAR_ZOOM";
+		folder = "burst_j11_m11_a2025_12h_08m_12s";
+		break;
+	case ZI_FLOUE_1:
+		seqName = "ZI_FLOUE_1";
+		folder = "burst_j11_m11_a2025_12h_11m_01s";
+		break;
+	case ZI_FLOUE_2:
+		seqName = "ZI_FLOUE_2";
+		folder = "burst_j11_m11_a2025_12h_11m_50s";
+		break;
+	case ZI_3:
+		seqName = "ZI_3";
+		folder = "burst_j11_m11_a2025_12h_12m_25s";
+		break;
+	case PORT_DU_RHIN_1:
+		seqName = "PORT_DU_RHIN_1";
+		folder = "burst_j11_m11_a2025_12h_14m_25s";
+		break;
+	case CATHEDRALE_1:
+		seqName = "CATHEDRALE_1";
+		folder = "burst_j11_m11_a2025_12h_15m_31s";
+		break;
+	case PORT_DU_RHIN_2:
+		seqName = "PORT_DU_RHIN_2";
+		folder = "burst_j11_m11_a2025_12h_16m_15s";
+		break;
+	case MAISON_1:
+		seqName = "MAISON_1";
+		folder = "burst_j11_m11_a2025_12h_18m_13s";
+		break;
+	case MAISON_2:
+		seqName = "MAISON_2";
+		folder = "burst_j11_m11_a2025_12h_19m_09s";
+		break;
+	case MAISON_3:
+		seqName = "MAISON_3";
+		folder = "burst_j11_m11_a2025_12h_20m_29s";
+		break;
+	case GRAVIERE:
+		seqName = "GRAVIERE";
+		folder = "burst_j11_m11_a2025_12h_21m_40s";
+		break;
+	case ZI_4:
+		seqName = "ZI_4";
+		folder = "burst_j11_m11_a2025_12h_22m_09s";
+		break;
+	case USINE_1:
+		seqName = "USINE_1";
+		folder = "burst_j11_m11_a2025_12h_26m_23s";
+		break;
+	case USINE_2:
+		seqName = "USINE_2";
+		folder = "burst_j11_m11_a2025_12h_27m_17s";
+		break;
+	case MAISON_4:
+		seqName = "MAISON_4";
+		folder = "burst_j11_m11_a2025_12h_29m_36s";
 		break;
 	}
 
+	const int N_IMAGES = 200;
 
-	std::vector<cv::Mat> images;
+	dstRGBImgs.resize(N_IMAGES);
+	dstBayerImgs.resize(N_IMAGES);
+	
 	Rect stackingROI;
-	for (int i = 0; i < 100; i++)
+	for (int i = 0; i < N_IMAGES; i++)
 	{
 		string filename = "C:\\Users\\alpha\\Desktop\\CSHR\\CSHR_2\\bursts\\" + folder + "\\im_" + std::to_string(i) + ".bmp";
-		cv::Mat img = cv::imread(filename);
+		cv::Mat img = cv::imread(filename, CV_8U);
 		if (img.empty())
 		{
 			throw std::runtime_error("Failed to load image: " + filename);
@@ -190,26 +125,35 @@ std::vector<cv::Mat> Optimizer::LoadAndPreProcess(IMAGE_SEQ _imSeq)
 		if (i == 0)
 		{
 			stackingROI = cv::selectROI(img);
+
+			auto _m2 = [] (int _v) {return (_v/2)*2;};
+
+			stackingROI.x = _m2(stackingROI.x);
+			stackingROI.y = _m2(stackingROI.y);
+			stackingROI.width = _m2(stackingROI.width);
+			stackingROI.height = _m2(stackingROI.height);
+
+
 			std::cout << "\n SELECTED IMAGE ROI: " << stackingROI.x << " " << stackingROI.y << " " << stackingROI.width << " " << stackingROI.height << std::endl;
 			cv::destroyAllWindows();
 			//Rect stackingROI(1659, 422, 509, 375);
 		}
 
-		const bool toRGB = true;
-		if (toRGB)
-		{
-			cvtColor(img(stackingROI), img, COLOR_BayerRGGB2BGR);
-		}
-		else
-		{
-			img = img(stackingROI);
 
-		}
-
-		images.push_back(img);
+		dstRGBImgs[i] = img(stackingROI);
+		//cvtColor(dstRGBImgs[i], dstBayerImgs[i], COLOR_BayerRGGB2GRAY);
+		Mat temp;
+		cvtColor(dstRGBImgs[i], temp, COLOR_BayerRGGB2BGR);
+		cvtColor(temp, dstBayerImgs[i], COLOR_BGR2GRAY);
 	}
 
-	return images;
+	int i = 0;
+	while (true)
+	{
+		imshow("Raws", dstRGBImgs[i%200]);
+		waitKey(50);
+		i++;
+	}
 }
 
 std::vector<std::vector<cv::Point2f>> Optimizer::OptFlow(std::vector<cv::Mat> images)
@@ -640,13 +584,15 @@ void Optimizer::DelaunayUnwarping(std::vector<cv::Mat> images, std::vector<std::
 
 
 // The size of the patch is a dilema, balancing between keeping it small to capture the sharp instances, and keeping it large, to minimize performance impact and errors
-// in the sharpness computations due to the inaccurate registration of the patch across images of the sequence
-const int SQUARE_OVERLAP = 0; // on each side. IMPORTANT must be 0 for the latest FullFrameSequentialMatcher. TODO remove once proven better
-const int SQUARE_SPACING = 20;
-const int SHARPNESS_DOWNSCALE = 2;
-const int TRACKING_DOWNSCALE = 2;
-const int SQUARE_SIZE = SQUARE_SPACING + 2*SQUARE_OVERLAP; 
-const int SQUARE_GRID_MARGINS = 5;
+// in the sharpness computations due to the inaccurate registration of the patch across images of the sequence (+ noise within)
+//const int SQUARE_OVERLAP = 0; // on each side.
+//const int SQUARE_SIZE = SQUARE_SPACING + 2*SQUARE_OVERLAP; 
+const int SQUARE_SIZE = 20; 
+// We shift the individual squares before computing the sharpness, to minimize the variation in laplacian variance due to registration errors. 
+// The margin size should be bigger than the maximal expected displacement in the sequence, to ensure we dont leave the image.
+const int SQUARE_GRID_MARGIN = 5; 
+
+
 
 
 void Optimizer::ShowSharpnessRanking(std::vector<cv::Mat> images, std::vector<vector<Point2f>> trackedPoints)
@@ -731,7 +677,7 @@ void Optimizer::ShowSharpnessRanking(std::vector<cv::Mat> images, std::vector<ve
 
 		std::cout << sharpnesses_xy[i] << std::endl;
 
-		Point2f center{ (float) (SQUARE_SPACING * x - SQUARE_OVERLAP), (float) (SQUARE_SPACING * y - SQUARE_OVERLAP) };
+		Point2f center{ (float) (SQUARE_SIZE * x), (float) (SQUARE_SIZE * y) };
 		center += Point2f((float)(SQUARE_SIZE/2),(float)(SQUARE_SIZE/2));
 		center += globalMovement[i];
 		cv::getRectSubPix(images[i], Size(SQUARE_SIZE, SQUARE_SIZE), center, native);
@@ -800,7 +746,7 @@ void Optimizer::ShowBarycentricStabilization(std::vector<cv::Mat> images, std::v
 
 
 
-cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
+cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, std::vector<cv::Mat> RGBImages)
 {
 	const int N_REFERENCE_FRAMES = 10;
 
@@ -809,19 +755,19 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 	// between 0 and 100, in practice between 5 and 25
 	const float STACKED_PERCENTILE = 15.f;
 
-	int LR_w = images[0].cols; // Initial (low-res) image width
-	int LR_h = images[0].rows; // Initial (low-res) image height
-	int nSquareX = (LR_w - 2*SQUARE_GRID_MARGINS) / SQUARE_SIZE;
-	int nSquareY = (LR_h - 2*SQUARE_GRID_MARGINS) / SQUARE_SIZE;
+	int LR_w = RGBImages[0].cols; // Initial (low-res) image width
+	int LR_h = RGBImages[0].rows; // Initial (low-res) image height
+	int nSquareX = (LR_w - 2*SQUARE_GRID_MARGIN) / SQUARE_SIZE;
+	int nSquareY = (LR_h - 2*SQUARE_GRID_MARGIN) / SQUARE_SIZE;
 
 	// LK params
 
 	const int MARGIN_SIZE = 10;  // Points that are near the edges are likely to disappear from frame to frame due to distortions/vibrations. We ignore them.
 	const int MAX_POINTS_TRACKED = 100;
-	const double MIN_DISTANCE = 10.;
+	const double MIN_DISTANCE = 15.;
 	const double QUALITY_LEVEL = .1; // default .3
-	const float ERR_REFERENCE_THRESHOLD = 2.f; 
-	const float ERR_SEQUENCE_THRESHOLD = 2.f;  
+	const float ERR_REFERENCE_THRESHOLD = 5.f; 
+	const float ERR_SEQUENCE_THRESHOLD = 5.f;  
 	const int BLOCK_SIZE = 2 * 1 + 1;
 	const int GRADIENT_SIZE = 2 * 1 + 1;
 
@@ -832,18 +778,24 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 	vector<vector<Point2f>> referencePoints(N_REFERENCE_FRAMES);
 	
 
-	// Find the original features.
+	// In the reference frames, find the features that we will track across the image sequence.
 	for (int i = 0; i < N_REFERENCE_FRAMES; i++)
 	{
-		Rect featureFinderROI(MARGIN_SIZE, MARGIN_SIZE, images[0].cols - 2 * MARGIN_SIZE, images[0].rows - 2 * MARGIN_SIZE);
+		Rect featureFinderROI(MARGIN_SIZE, MARGIN_SIZE, RGBImages[i].cols - 2 * MARGIN_SIZE, RGBImages[i].rows - 2 * MARGIN_SIZE);
 
-		goodFeaturesToTrack(images[i](featureFinderROI), referencePoints[i], MAX_POINTS_TRACKED, QUALITY_LEVEL, MIN_DISTANCE, Mat(), BLOCK_SIZE, GRADIENT_SIZE, false, 0.04);
+		goodFeaturesToTrack(RGBImages[i](featureFinderROI), referencePoints[i], MAX_POINTS_TRACKED, QUALITY_LEVEL, MIN_DISTANCE, Mat(), BLOCK_SIZE, GRADIENT_SIZE, false, 0.04);
 
+		//Mat imcl = RGBImages[i](featureFinderROI).clone();
+		//for (int j = 0; j < referencePoints[i].size(); j++)
+		//{
+		//	cv::circle(imcl, referencePoints[i][j], 2, 255);
+		//}
+		//__debugbreak();
 
 		Size winSize = Size(BLOCK_SIZE / 2, BLOCK_SIZE / 2);
 		Size zeroZone = Size(-1, -1);
 		TermCriteria _criteria = TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 40, 0.001);
-		cornerSubPix(images[i](featureFinderROI), referencePoints[i], winSize, zeroZone, _criteria);
+		cornerSubPix(RGBImages[i](featureFinderROI), referencePoints[i], winSize, zeroZone, _criteria);
 
 		for (int j = 0; j < referencePoints[i].size(); j++)
 		{
@@ -854,13 +806,16 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 	}
 
 
+
+
+
 	// Contains the position of each frame relative to the first reference frame, which is considered to be the absolute referential. (therefore absoluteOffsets[0] = (0,0))
 	// If p = absoluteOffsets[ref_id], then ref_im[0]((x,y) + p) = ref_im[ref_id]((x,y)). (Coarsest approx. Initially necessary, then we will interpolate tracked points)
 	vector<Point2f> absoluteOffsets(N_REFERENCE_FRAMES);
 
 	vector<vector<Point2f>> referencePointsAbsoluteCoordinates(N_REFERENCE_FRAMES);
 
-	// Find the absoluteOffsets of the reference frames. 
+	// Find the absoluteOffsets of the reference frames and the absolute positions of the reference point. 
 	{
 		// Holds the barycenter of the points in the ref frame that were matched in this image, so not a constant.
 		vector<Point2f> referenceBarycenters(N_REFERENCE_FRAMES);
@@ -876,7 +831,7 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 
 
 
-		// Match the LK points between frames
+		// Match the LK points between reference frames
 		for (int i = 0; i < N_REFERENCE_FRAMES; i++)
 		{
 			mutualRelativeOffsetsOfTheReferences[i].resize(N_REFERENCE_FRAMES);
@@ -896,7 +851,7 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 				vector<float> err;
 				TermCriteria criteria = TermCriteria((TermCriteria::COUNT)+(TermCriteria::EPS), 10, 0.03);
 
-				calcOpticalFlowPyrLK(images[ref_id], images[i], referencePoints[ref_id], potentialPoints, status, err, Size(15, 15), 2, criteria, 0, 1.0E-3);
+				calcOpticalFlowPyrLK(RGBImages[ref_id], RGBImages[i], referencePoints[ref_id], potentialPoints, status, err, Size(15, 15), 2, criteria, 0, 1.0E-3);
 
 
 				int nMatches = 0;
@@ -1039,8 +994,13 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 		}
 	}
 	
-
 	std::cout << "\nReference frames (" << N_REFERENCE_FRAMES << ") aligned.\n" << std::endl;
+
+
+
+	/////////////////// END OF REFERENCE FRAMES PROCESSING //////////////////////////////////
+
+
 
 	// Preallocated for efficiency. Reused for each image of the sequence, for each reference frame. Contains the coordinates in the current image of the points tracked from the ref image. No NaNs.
 	std::vector<Point2f> foundPointsCurr(MAX_POINTS_TRACKED);
@@ -1056,21 +1016,28 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 		sharpnesses[_x].resize(nSquareY);
 		for (int _y = 0; _y < nSquareY; _y++)
 		{
-			sharpnesses[_x][_y].resize(images.size());
+			sharpnesses[_x][_y].resize(RGBImages.size());
 		}
 	}
 
 	// Pre allocated for reuse by each image
-	Mat laplacianBuffer(images[0].size(), CV_32F);
+	Mat laplacianBuffer(RGBImages[0].size(), CV_32F);
 
 
-	vector<Mat> perPointAbsoluteOffset(images.size());
-	for (int i = N_REFERENCE_FRAMES; i < images.size(); i++) perPointAbsoluteOffset[i] = Mat::zeros(images[0].size(), CV_32FC2);
+	vector<Mat> perSquareAbsoluteOffset(RGBImages.size());
+	for (int i = N_REFERENCE_FRAMES; i < RGBImages.size(); i++) perSquareAbsoluteOffset[i] = Mat::zeros(Size(nSquareX, nSquareY), CV_32FC2);
 
-	// In each image, find the LK features of the references, and compute for each pixel the estimated coordinates in the absolute referential.
-	for (int i = N_REFERENCE_FRAMES; i < images.size(); i++)
+	// Preallocated for efficiency.
+	Mat currentPerSquareNormalizer = Mat::zeros(Size(nSquareX, nSquareY), CV_32F);
+
+	// In each image of the sequence, find the LK features of the references, and compute for each square patch its estimated offset in the absolute referential.
+	for (int i = N_REFERENCE_FRAMES; i < RGBImages.size(); i++)
 	{
-		
+		currentPerSquareNormalizer = .0f;
+
+		Point2f currentFrameAbsoluteOffset(.0f, .0f);
+		int totalPointsMatched = 0;
+
 		for (int ref_id = 0; ref_id < N_REFERENCE_FRAMES; ref_id++)
 		{
 
@@ -1081,11 +1048,11 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 			vector<float> err;
 			TermCriteria criteria = TermCriteria((TermCriteria::COUNT)+(TermCriteria::EPS), 10, 0.03);
 
-			calcOpticalFlowPyrLK(images[ref_id], images[i], referencePoints[ref_id], potentialPoints, status, err, Size(15, 15), 2, criteria, 0, 1.0E-3);
+			calcOpticalFlowPyrLK(RGBImages[ref_id], RGBImages[i], referencePoints[ref_id], potentialPoints, status, err, Size(15, 15), 2, criteria, 0, 1.0E-3);
 
 #ifdef _DEBUG
-			Mat refIm = images[ref_id].clone();
-			Mat currIm = images[i].clone();
+			Mat refIm = RGBImages[ref_id].clone();
+			Mat currIm = RGBImages[i].clone();
 
 			std::vector<Point2f> deltas(potentialPoints.size());
 #endif
@@ -1100,8 +1067,35 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 					foundPointsCurr[nMatches] = potentialPoints[j];
 					foundPointsRefAbsPos[nMatches] = referencePointsAbsoluteCoordinates[ref_id][j];
 
+					currentFrameAbsoluteOffset += referencePointsAbsoluteCoordinates[ref_id][j] - potentialPoints[j];
+
 					nMatches++;
-					
+
+					int _x = floorf(potentialPoints[j].x / (float) SQUARE_SIZE);
+					int _y = floorf(potentialPoints[j].y / (float) SQUARE_SIZE);
+
+					for (int _xx = -1; _xx <= 1; _xx++)
+					{
+						for (int _yy = -1; _yy <= 1; _yy++)
+						{
+							int sx = _x + _xx;
+							int sy = _y + _yy;
+
+							if (sx < 0 || sx > nSquareX-1 || sy < 0 || sy > nSquareY-1) continue;
+
+							Point2f squareCenter(
+								(float) SQUARE_GRID_MARGIN + (float)SQUARE_SIZE* ((float)sx + .5f),
+								(float) SQUARE_GRID_MARGIN + (float)SQUARE_SIZE* ((float)sy + .5f));
+
+							Point2f _d = potentialPoints[j] - squareCenter;
+
+							float _weight = 1.f - sqrtf(_d.x * _d.x + _d.y * _d.y) / ((float) SQUARE_SIZE * 1.5f); 
+
+							perSquareAbsoluteOffset[i].at<Point2f>(sy, sx) += _weight * (referencePointsAbsoluteCoordinates[ref_id][j] - potentialPoints[j]);
+							currentPerSquareNormalizer.at<float>(sy, sx) += _weight;
+						}
+					}
+					// TODO ransac
 #ifdef _DEBUG
 					cv::circle(refIm, referencePoints[ref_id][j], 2, 255);
 					cv::circle(currIm, potentialPoints[j], 2, 255);
@@ -1110,12 +1104,11 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 #endif
 				}
 			}
+
 			//std::cerr << "nMatches at step " << i << " : " << nMatches << " / " << referencePoints[ref_id].size() << std::endl;
 
 
-
-			// TODO ransac
-
+			totalPointsMatched += nMatches;
 
 #ifdef _DEBUG
 			int matHalfSize = 100;
@@ -1154,73 +1147,55 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 			int a = 0;
 			
 #endif
-
-
-			// TODO average over ref_ids, weighted by... ? A confidence ? Based on the (weighted average of the) err of the nearest neighbors
-			// TODO Quadtree ? Or some structure like a grid.
-
-			if (nMatches == 0) continue;
-
-			
-			for (int x = 0; x < images[0].cols; x++)
-			{
-				for (int y = 0; y < images[0].rows; y++)
-				{
-					Point2f locOffset(.0f, .0f);
-					
-					float weightsSum = .0f;
-					for (int p = 0; p < nMatches; p++)
-					{
-						float invDSquared = 1.f / (.00001f + powf(foundPointsCurr[p].x - (float)x, 2.f) + powf(foundPointsCurr[p].y - (float)y, 2.f));
-
-						weightsSum += invDSquared;
-						locOffset += invDSquared * (foundPointsRefAbsPos[p] - foundPointsCurr[p]); // TODO veryify that floating point errors are admissible
-					}
-
-					// If non 0 matches:
-					locOffset /= weightsSum;
-					
-					perPointAbsoluteOffset[i].at<Point2f>(y, x) += locOffset;
-				}
-			}
 		}
 
+		currentFrameAbsoluteOffset /= (float) totalPointsMatched;
 
-		perPointAbsoluteOffset[i] *= 1.f/(float) N_REFERENCE_FRAMES;
+		constexpr float globalOffsetWeight = .5f;
+
+		perSquareAbsoluteOffset[i] = (perSquareAbsoluteOffset[i] + Scalar(globalOffsetWeight * currentFrameAbsoluteOffset.x, globalOffsetWeight * currentFrameAbsoluteOffset.y)) /
+			(currentPerSquareNormalizer + globalOffsetWeight);
+
+
 	
 
 		// Compute sharpnesses:
 
-		cv::Laplacian(images[i], laplacianBuffer, CV_32F);
+		cv::Laplacian(RGBImages[i], laplacianBuffer, CV_32F);
 
 		
 		for (int x = 0; x < nSquareX; x++)
 		{
 			for (int y = 0; y < nSquareY; y++)
 			{
-				// Incorrect registration of the patches completely ruins the sorting. This solution is okayish. We could instead track the transformation
-				// of the nearest feature points from the grid points in the ref frames, but too complicated.
-				// 
-				// The grid is fixed in the absolute referential. We are looking, for each tile of the grid, for its position in the current image. An approximation is to look, in the per pixel offsets matrix 
-				// at the coordinates of the current square's top left corner and assume local uniformity of the deformation field (i.e. translation). We simply pick the point in the current image that, 
-				// were the field uniform, would map to the absolute coordinates of the top left corner of the current patch.
-				Point2f registrationOffset = perPointAbsoluteOffset[i].at<Point2f>(y * SQUARE_SPACING + SQUARE_GRID_MARGINS, x * SQUARE_SPACING + SQUARE_GRID_MARGINS);
+				// Incorrect registration of the patches completely ruins the sorting by sharpness. This solution is okayish.
 
-				Scalar varLaplacian;
-				Scalar meanLaplacian;
+				Point2f registrationOffset = perSquareAbsoluteOffset[i].at<Point2f>(y, x);
 
-				Rect _roi(x * SQUARE_SPACING + SQUARE_GRID_MARGINS - (int)registrationOffset.x, y * SQUARE_SPACING + SQUARE_GRID_MARGINS - (int)registrationOffset.y, SQUARE_SIZE, SQUARE_SIZE);
+				Rect _roi(x * SQUARE_SIZE + SQUARE_GRID_MARGIN - (int)registrationOffset.x, y * SQUARE_SIZE + SQUARE_GRID_MARGIN - (int)registrationOffset.y, SQUARE_SIZE, SQUARE_SIZE);
 
-				cv::meanStdDev(images[i](_roi), meanLaplacian, varLaplacian);
-
-				sharpnesses[x][y][i] = (float)varLaplacian[0];
+				if (_roi.x < 0 || _roi.y < 0 || _roi.x + _roi.width >= RGBImages[i].cols || _roi.y + _roi.height >= RGBImages[i].rows)
+				{
+					sharpnesses[x][y][i] = .0f;
+				}
+				else
+				{
+					Scalar varLaplacian;
+					Scalar meanLaplacian;
+					cv::meanStdDev(RGBImages[i](_roi), meanLaplacian, varLaplacian);
+					sharpnesses[x][y][i] = (float)varLaplacian[0];
+				}	
 			}
 		}
 
 		std::cout << "Sharpness, alignement : " << i  << std::endl;
 	}
 
-	std::cout << "\nSharpness computed and per pixel alignement of the sequence done. \n" << std::endl;
+	std::cout << "\nSharpness computed, square patches aligned across the sequence. \n" << std::endl;
+
+
+
+
 
 
 
@@ -1231,10 +1206,10 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 	Mat stack = cv::Mat::zeros(SR_size, CV_32F);
 	Mat normalizer = cv::Mat::zeros(SR_size, CV_32F);
 
-	vector<int> ids(images.size());
+	vector<int> ids(RGBImages.size());
 
 	// Just the target number of the sharpest fragments to stack.
-	int nStackedSquares = (int)((float)images.size() * STACKED_PERCENTILE / 100.f);
+	int nStackedSquares = (int)((float)RGBImages.size() * STACKED_PERCENTILE / 100.f);
 
 	// Preallocated for efficiency
 	Mat basePatch = Mat::zeros(Size(UPSCALE_FACTOR+2, UPSCALE_FACTOR+2), CV_32F);
@@ -1257,27 +1232,28 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 			for (int i = 0; i < N_REFERENCE_FRAMES; i++) s[i] = 0.f;
 			
 			// sort ids by descending sharpness:
-			for (int i = 0; i < images.size(); i++) ids[i] = i;
+			for (int i = 0; i < RGBImages.size(); i++) ids[i] = i;
 			std::sort(ids.begin(), ids.end(),
 				[&s](int id_a, int id_b) {
 					return s[id_a] > s[id_b];
 				});
 
 			
-			Point2i patchTopLeft(x * SQUARE_SIZE + SQUARE_GRID_MARGINS, y * SQUARE_SIZE + SQUARE_GRID_MARGINS);
+			Point2i patchTopLeft(x * SQUARE_SIZE + SQUARE_GRID_MARGIN, y * SQUARE_SIZE + SQUARE_GRID_MARGIN);
 
 			for (int i = 0; i < nStackedSquares; i++)
 			{
 				int id = ids[i];
 				
-				// The copied patch from the src sequence image is coarsely positioned, within 1 px of the position justified above, in the loop where the sharpnesses are computed.
+				// The copied patch from the src sequence image is coarsely positioned, rounded to integer coordinates so within 1 px of its absolute position.
 				// This whole approach forces us to transform square patches from the seq ims into non square areas of the stack. We use a normalizer matrix to normalize each pixel
 				// of the stack once we are done stacking. Hopefully (more and more likely as nStackedSquares grows), the areas overlap sufficently for the stack to be fully covered.
 				// We can always have the patches overlap like previously, but that increases costs (not constrained part ?) and is no guarantee. (see SQUARE_SPACING's definition)
-				Point2f registrationOffset = perPointAbsoluteOffset[id].at<Point2f>(y * SQUARE_SPACING + SQUARE_GRID_MARGINS, x * SQUARE_SPACING + SQUARE_GRID_MARGINS);
+
+				Point2f squareRegistrationOffset = perSquareAbsoluteOffset[id].at<Point2f>(y, x);
 				Point2i seqimTopLeft(
-					patchTopLeft.x - (int)registrationOffset.x,
-					patchTopLeft.y - (int)registrationOffset.y
+					patchTopLeft.x - (int)squareRegistrationOffset.x,
+					patchTopLeft.y - (int)squareRegistrationOffset.y
 				);
 
 				//Perform bilinear upscaling of the patch in the id-th image into the stack, with the warping matrix perPointAbsoluteOffset[id].
@@ -1285,7 +1261,13 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 				{
 					for (int yy = seqimTopLeft.y; yy < seqimTopLeft.y + SQUARE_SIZE; yy++)
 					{
-						Point2f pixOffset = (float) UPSCALE_FACTOR * perPointAbsoluteOffset[id].at<Point2f>(yy, xx);
+						Point2f pixOffset(.0f, .0f);
+
+
+						// TODO sum over neighboring squares.
+
+						pixOffset *= (float) UPSCALE_FACTOR;
+
 						Point2f stackxxyy = Point2f((float)(UPSCALE_FACTOR * xx), (float)(UPSCALE_FACTOR * yy));
 						Point2f inStackPosition = stackxxyy + pixOffset;
 
@@ -1301,7 +1283,7 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 
 						add(normalizer(stackROI), shiftedPatch, normalizer(stackROI));
 
-						shiftedPatch *= (float) images[id].at<uchar>(yy, xx);
+						shiftedPatch *= (float) bayerImages[id].at<uchar>(yy, xx);
 
 						add(stack(stackROI), shiftedPatch, stack(stackROI));
 					}
@@ -1331,650 +1313,13 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> images)
 			sigmas[i] = (float) UPSCALE_FACTOR * .5f * (1.f + (float) i);
 			deconv = LucyRichardson(toBeDeconv, 10, sigmas[i]);
 			deconv = LucyRichardson(toBeDeconv, 20, sigmas[i]);
-			//deconv = LucyRichardson(toBeDeconv, 30, sigmas[i]);
-
-			Mat deconv8U = deconv.clone() * 255.f;
-			deconv8U.convertTo(deconv8U, CV_8U);
-
-			std::string name = "SR_samples\\" + seqName + "_" + std::to_string(UPSCALE_FACTOR) + "x_" + std::to_string((int)STACKED_PERCENTILE) + "percentOf"
-				+ std::to_string((int)images.size()) + "images_sigma" + std::to_string(sigmas[i]) 
-#ifdef SHARP_STACK
-				+ "_SHARP_STACK_"
-#else
-				+ "_AVERAGE_STACK_"
-#endif
-				+ std::to_string(time(0)) + ".bmp";
-			cv::imwrite(name, deconv8U);
-		}
-	}
-	stack *= 255.f;
-
-	//Mat unsharpMasked = UnsharpMasking(deconv);
-	//Mat equalHist = EqualizeHistogram(deconv8U);
-
-
-	stack.convertTo(stack, CV_8U);
-
-	cv::imwrite("stack5.bmp", stack);
-
-	cv::imshow("Stack", stack);
-
-	int keyboard = waitKey(0);
-
-	return stack;
-}
-
-
-void remapAdd(cv::Mat LR_CHAR_src, cv::Mat SR_FLOAT_dst, float UPSCALE_FACTOR, Point2f inSrcOffset)
-{
-	for (int x = 0; x < SR_FLOAT_dst.cols; x++)
-	{
-		for (int y = 0; y < SR_FLOAT_dst.rows; y++)
-		{
-			// For some reason there is no std round to int, but it should not be a problem as srcX and srcY should not leave the range of correctly represented integers
-			// using float values. See https://www.h-schmidt.net/FloatConverter/IEEE754.html, correct up to ~10 000 000
-			int srcX = (int) std::round( inSrcOffset.x +  ((float) x) / UPSCALE_FACTOR);  // or static_cast<int> ? Or interpolation if on the edge ? TODO
-			int srcY = (int) std::round( inSrcOffset.y +  ((float) y) / UPSCALE_FACTOR);  // or static_cast<int> ? Or interpolation if on the edge ? TODO
-			SR_FLOAT_dst.at<float>(y, x) += static_cast<float>(LR_CHAR_src.at<uchar>(srcY, srcX));
-		}
-	}
-}
-
-// AKA "sharp stack", https://www.researchgate.net/publication/269107332_Generation_of_Super-Resolution_Stills_from_Video
-void remapNearest(cv::Mat LR_CHAR_src, cv::Mat SR_FLOAT_dst, cv::Mat SR_FLOAT_distanceBuffer, int UPSCALE_FACTOR, Point2f inSrcOffset)
-{
-	// Implementation optimized so as to minimize branch predictions. Not SIMD friendly anyway.
-
-
-	// Cant use LR_CHAR_src because it is the full image and not a ROI
-	int nSrcCols = SR_FLOAT_dst.cols / UPSCALE_FACTOR;
-	int nSrcRows = SR_FLOAT_dst.rows / UPSCALE_FACTOR;
-
-	for (int xx = 0; xx < UPSCALE_FACTOR; xx++)
-	{
-		for (int yy = 0; yy < UPSCALE_FACTOR; yy++)
-		{
-			float fracSrcX = inSrcOffset.x +  ((float) xx) / (float)UPSCALE_FACTOR;
-			float fracSrcY = inSrcOffset.y +  ((float) yy) / (float)UPSCALE_FACTOR;
-
-
-			// For some reason there is no std round to int, but it should not be a problem as srcX and srcY should not leave the range of correctly represented integers
-			// using float values. See https://www.h-schmidt.net/FloatConverter/IEEE754.html, correct up to ~10 000 000
-			int srcX = (int) std::round(fracSrcX); 
-			int srcY = (int) std::round(fracSrcY); 
-
-			float dx = srcX - fracSrcX;
-			float dy = srcY - fracSrcY;
-
-			float d2 = dx*dx + dy*dy;
-
-			// The buffer contains the previous smallest squared distance to an LR pixel.
-			float currentClosest = SR_FLOAT_distanceBuffer.at<float>(yy, xx);
-			if (currentClosest > d2)
-			{
-				SR_FLOAT_distanceBuffer.at<float>(yy, xx) = d2;
-
-
-				for (int x = 0; x < nSrcCols; x++)
-				{
-					for (int y = 0; y < nSrcRows; y++)
-					{
-						SR_FLOAT_dst.at<float>(yy + y * UPSCALE_FACTOR, xx + x * UPSCALE_FACTOR) = static_cast<float>(LR_CHAR_src.at<uchar>(srcY + y, srcX + x));
-					}
-				}
-			}
-		}
-	}
-}
-
-
-//#define SHARP_STACK
-
-cv::Mat Optimizer::RecursiveMatching(std::vector<cv::Mat> images, std::vector<vector<Point2f>> trackedPoints)
-{
-	const int UPSCALE_FACTOR = 1;
-
-	// between 0 and 100
-	const float STACKED_PERCENTILE = 10.f;
-
-	int LR_w = images[0].cols;
-	int LR_h = images[0].rows;
-
-
-	// The offset of this image in the sequence, relative to a common imaginary reference frame.
-	// Approximate, because distorsions and blur induce inaccuracies in the point matching (opt flow).
-	// Is used as a first estimate before refining per fragment.
-	vector<Point2f> globalMovement = computeOffsetsOld(trackedPoints);
-
-	int nSquareX = LR_w / SQUARE_SPACING;
-	int nSquareY = LR_h / SQUARE_SPACING;
-
-
-	// Create a vector of matrices, the i-th matrix contains the sharpness of the squares in the i-th image of the sequence.
-	std::vector<cv::Mat> sharpness(images.size());
-
-	// Buffer to avoid reallocs
-	cv::Mat laplacian(images[0].size(), CV_32F);
-
-
-
-
-	// Compute sharpnesses
-	auto time1 = high_resolution_clock::now();
-	Mat _sharpnessComputationBuffer(Size(SQUARE_SIZE/SHARPNESS_DOWNSCALE, SQUARE_SIZE/SHARPNESS_DOWNSCALE), CV_8U); // Downscaled to negate noise a bit
-	for (int i = 0; i < images.size(); i++)
-	{
-		sharpness[i] = Mat(Size(nSquareX, nSquareY), CV_32F);
-
-		cv::Laplacian(images[i], laplacian, CV_32F);
-
-		for (int x = 1; x < sharpness[i].cols - 1; x++)
-		{
-			for (int y = 1; y < sharpness[i].rows - 1; y++)
-			{
-				Scalar varLaplacian;
-				Scalar meanLaplacian;
-
-				Rect _roi(
-					x * SQUARE_SPACING - SQUARE_OVERLAP + (int)globalMovement[i].x,
-					y * SQUARE_SPACING - SQUARE_OVERLAP + (int)globalMovement[i].y,
-					SQUARE_SIZE,
-					SQUARE_SIZE
-				);
-
-				cv::resize(images[i](_roi), _sharpnessComputationBuffer, _sharpnessComputationBuffer.size(), 0, 0, INTER_LINEAR);
-				cv::meanStdDev(_sharpnessComputationBuffer, meanLaplacian, varLaplacian);
-
-				sharpness[i].at<float>(y, x) = (float)varLaplacian[0]; 
-			}
-		}
-	}
-	auto time2 = high_resolution_clock::now();
-	int ms_int = (int) duration_cast<milliseconds>(time2 - time1).count();
-	std::cout << "\nSharpness computations took " << ms_int << " ms, i.e. " << (ms_int / (int)images.size()) << " ms per image." << std::endl;
-
-	// TODO better sharpness
-
-
-	// TODO nearest neighbor, as per "sharp stack"
-
-
-
-
-	// preallocated. The to-be-sorted images ids in the sequence.
-	std::vector<int> ids(images.size());
-	// preallocated, to simplify sorting
-	std::vector<float> sharpnesses_xy(images.size());
-	
-
-
-	// For each image, the number of its fragments that are used in the sub stacks. 
-	std::vector<int> nUsedFragsPerImage(images.size());
-	for (int i = 0; i < images.size(); i++) nUsedFragsPerImage[i] = 0;
-
-
-	// The square upscaled stacked fragments. Will be merged into the stacked image later.
-	std::vector<std::vector<cv::Mat>> fragments;
-
-	// yayx
-	std::vector<std::vector<std::vector<Point2f>>> perFragmentImageOffsets;
-	std::vector<std::vector<std::vector<int>>> perFragmentImageIDs;
-
-
-	fragments.resize(nSquareX);
-	perFragmentImageOffsets.resize(nSquareX);
-	perFragmentImageIDs.resize(nSquareX);
-	for (int x = 1; x < sharpness[0].cols - 1; x++) {
-		fragments[x].resize(nSquareY);
-		perFragmentImageOffsets[x].resize(nSquareY);
-		perFragmentImageIDs[x].resize(nSquareY);
-	}
-	
-
-
-	// Just the target number of the sharpest fragments to stack.
-	int nStackedSquares = (int)((float)images.size() * STACKED_PERCENTILE / 100.f);
-
-#ifdef _DEBUG
-	Mat debugger = Mat::zeros(Size(nSquareX, nSquareY), CV_8U); // to monitor how many fragments were matched to the sharpest
-#endif
-
-	time1 = high_resolution_clock::now();
-	for (int x = 1; x < sharpness[0].cols - 1; x++)
-	{
-		for (int y = 1; y < sharpness[0].rows - 1; y++)
-		{
-			// sort ids by descending sharpness
-			for (int i = 0; i < images.size(); i++)
-			{
-				ids[i] = i;
-				sharpnesses_xy[i] = sharpness[i].at<float>(y, x);
-			}
-			std::sort(ids.begin(), ids.end(),
-				[&sharpnesses_xy](int id_a, int id_b) {
-					return sharpnesses_xy[id_a] > sharpnesses_xy[id_b];
-				});
-
-
-			
-
-			const int REGION_SIZE = 5;
-			const int MAX_POINTS_TRACKED = 20;
-			const double MIN_DISTANCE = (double)(SQUARE_SIZE / 8);
-			const double QUALITY_LEVEL = .1; // default .3
-
-			// The size of the expected maximum error in barycenter computations. That is, points within the reference square - CROP_SIZE on each side 
-			// are expected to be found in all the other sharp fragments. Not a big issue if they arent
-			const int CROP_SIZE = 3; 
-
-			int N_REFERENCES = std::min(1, nStackedSquares);
-
-			// features coordinates in the sharpest fragment
-			vector<vector<Point2f>> vecReferencePoints(N_REFERENCES);
-
-			for (int i = 0; i < N_REFERENCES; i++)
-			{
-				int _id0 = ids[i];
-
-
-				// A cropped ROI is used (-CROP_SIZE pixels at both ends) to avoid tracking pixels that could disappear 
-				int ROI0_x_cropped = x * SQUARE_SPACING - SQUARE_OVERLAP + (int)globalMovement[_id0].x + CROP_SIZE; // top left
-				int ROI0_y_cropped = y * SQUARE_SPACING - SQUARE_OVERLAP + (int)globalMovement[_id0].y + CROP_SIZE; // top left
-				int ROI0_w_cropped = SQUARE_SIZE - 2 * CROP_SIZE;
-				int ROI0_h_cropped = SQUARE_SIZE - 2 * CROP_SIZE;
-				Rect ROI0_cropped(ROI0_x_cropped, ROI0_y_cropped, ROI0_w_cropped, ROI0_h_cropped); 
-
-				vector<Point2f> localReferencePoints;
-				goodFeaturesToTrack(images[_id0](ROI0_cropped), localReferencePoints, MAX_POINTS_TRACKED, QUALITY_LEVEL, MIN_DISTANCE, Mat(), REGION_SIZE, false, 0.04);			
-
-
-				// If no good features were found, there is no point stacking because we wont get subpixel accuracy, so we keep things as they are and go on to stack the next square sequence.
-				// At these coordinates, the stack will only contain the sharpest fragment that was put in above.
-				if (localReferencePoints.size() == 0)
-				{
-					continue;
-				}
-
-				
-				// TODO perform what follows only on the best frag
-
-
-				// Refine the corners to subpixel precision
-				Size winSize = Size( REGION_SIZE/2, REGION_SIZE/2 );
-				Size zeroZone = Size( -1, -1 );
-				TermCriteria _criteria = TermCriteria( TermCriteria::EPS + TermCriteria::COUNT, 40, 0.001 );
-				cornerSubPix( images[_id0](ROI0_cropped), localReferencePoints, winSize, zeroZone, _criteria);
-
-				// We are interested in coordinates relative to the uncropped ROI, ROI0.
-				for (int j = 0; j < localReferencePoints.size(); j++) localReferencePoints[j] += Point2f((float)CROP_SIZE, (float)CROP_SIZE);
-
-				vecReferencePoints[i] = std::move(localReferencePoints);
-			}
-			
-			int argmaxVecReferencePoints = 0;
-			int _id0 = ids[argmaxVecReferencePoints];
-
-			fragments[x][y] = Mat::zeros(Size(SQUARE_SIZE*UPSCALE_FACTOR, SQUARE_SIZE*UPSCALE_FACTOR), CV_32F);
-
-
-			// We use the integer-rounded coordinates of globalMovement[_id0], because this simplifies things later on when we compare the i-th fragment's points position.
-			// ROI's coordinates are ints, and nothing we can do about it.
-			int ROI0_x = x * SQUARE_SPACING - SQUARE_OVERLAP + (int)globalMovement[_id0].x; // top left
-			int ROI0_y = y * SQUARE_SPACING - SQUARE_OVERLAP + (int)globalMovement[_id0].y; // top left
-			Rect ROI0(ROI0_x, ROI0_y, SQUARE_SIZE, SQUARE_SIZE);
-
-			
-
-			// Initialize the fragment stack with the sharpest fragment:
-#ifdef SHARP_STACK
-			Mat squaredDistancesBuffer = Mat::ones(Size(UPSCALE_FACTOR,UPSCALE_FACTOR), CV_32F) * UPSCALE_FACTOR*UPSCALE_FACTOR;
-			remapNearest(images[_id0], fragments[x][y], squaredDistancesBuffer, UPSCALE_FACTOR, Point2f((float)ROI0_x, (float)ROI0_y));
-#else
-			remapAdd(images[_id0], fragments[x][y], (float) UPSCALE_FACTOR, Point2f((float)ROI0_x, (float)ROI0_y));
-#endif
-
-
-			// Note that the offsets are whole numbers (floats though), because we used the integer coordinates of the ROI for the remapAdd
-			nUsedFragsPerImage[_id0]++;
-			perFragmentImageOffsets[x][y].push_back(Point2f(.0f,.0f));
-			perFragmentImageIDs[x][y].push_back(_id0);
-
-
-			if (vecReferencePoints[argmaxVecReferencePoints].size() == 0) continue;
-
-
-			int nEffectivelyStackedSquares = 1; // To normalize the stack fragment, if not sharpStack.
-		
-
-			// match all the other sharpest squares to the original one, and add them to fragments[x][y].
-			vector<Point2f> potentialPoints(vecReferencePoints[argmaxVecReferencePoints].size());
-			vector<Point2f> pointsDetectedInCurrentSquare(vecReferencePoints[argmaxVecReferencePoints].size());
-			vector<uchar> status;
-			vector<float> err;
-			TermCriteria criteria = TermCriteria((TermCriteria::COUNT)+(TermCriteria::EPS), 10, 0.03);
-			for (int i = 1; i < nStackedSquares; i++)
-			{
-				int _id = ids[i];
-
-
-				int ROIi_x = x * SQUARE_SPACING - SQUARE_OVERLAP + (int)globalMovement[_id].x; // top left
-				int ROIi_y = y * SQUARE_SPACING - SQUARE_OVERLAP + (int)globalMovement[_id].y; // top left
-				int ROIi_w = SQUARE_SIZE;
-				int ROIi_h = SQUARE_SIZE;
-				Rect ROIi(ROIi_x, ROIi_y, ROIi_w, ROIi_h);
-
-				if (vecReferencePoints[argmaxVecReferencePoints].size() == 0) __debugbreak();
-
-				// calculate optical flow
-				pointsDetectedInCurrentSquare.resize(0);
-				status.resize(0);
-				err.resize(0);
-				//TermCriteria criteria = TermCriteria((TermCriteria::COUNT)+(TermCriteria::EPS), 10, 0.03);
-				calcOpticalFlowPyrLK(images[_id0](ROI0), images[_id](ROIi), vecReferencePoints[argmaxVecReferencePoints], potentialPoints, status, err, Size(7, 7), 2, criteria, 0, 1.0E-3);
-
-				// TODO reuse the zero-th pyramid
-
-
-				Point2f localMovement(.0f, .0f);
-				int nPts = 0;
-				for (uint j = 0; j < potentialPoints.size(); j++)
-				{
-					//TODO exclude those with too high a returned error 
-					//TODO RANSAC with pointsDetectedInCurrentSquare
-					if (status[j] == 1) {
-						pointsDetectedInCurrentSquare.push_back(potentialPoints[j]);
-						localMovement += (potentialPoints[j] - vecReferencePoints[argmaxVecReferencePoints][j]);
-						nPts++;
-					}
-				}
-
-				if (nPts == 0) continue;
-
-
-#ifdef _DEBUG
-				Mat maskFragStack = Mat::ones(fragments[x][y].size(), CV_32F);
-				Mat maskCurrentImage = Mat::ones(fragments[x][y].size(), CV_32F);
-				Mat maskInitialImage = Mat::ones(fragments[x][y].size(), CV_32F);
-				for (uint j = 0; j < potentialPoints.size(); j++) {
-					if (status[j] == 1) {
-						circle(maskFragStack, vecReferencePoints[argmaxVecReferencePoints][j] * UPSCALE_FACTOR, 1, Scalar(.8f), -1);
-						circle(maskInitialImage, vecReferencePoints[argmaxVecReferencePoints][j] * UPSCALE_FACTOR, 1, Scalar(.8f), -1);
-
-						circle(maskCurrentImage, potentialPoints[j], 1, Scalar(.8f), -1);
-					}
-					else {
-						circle(maskFragStack, vecReferencePoints[argmaxVecReferencePoints][j] * UPSCALE_FACTOR, 2, Scalar(.8f), -1);
-						circle(maskInitialImage, vecReferencePoints[argmaxVecReferencePoints][j] * UPSCALE_FACTOR, 2, Scalar(.8f), -1);
-					}
-				}
-				
-				multiply(maskFragStack, fragments[x][y], maskFragStack, 1.f/255.f);
-				multiply(maskCurrentImage, images[_id](ROIi), maskCurrentImage, 1.f/255.f, CV_32F);
-				multiply(maskInitialImage, images[_id0](ROI0), maskInitialImage, 1.f/255.f, CV_32F);
-
-				if (y==7 && x == 14)
-				{
-					int _aaaa = 0;
-				}
-					
-#endif
-
-				nEffectivelyStackedSquares++;
-
-				localMovement /= (float)nPts;
-
-
-				Point2f intROI_i_tl((float)ROIi_x, (float)ROIi_y);
-
-				// Such that frag[ (i,j) ] = Image_id[ (i,j) / UPSCALE_FACTOR + localMovement + intROI_i_tl]. The sub pixel mapping depends on the remap implementation.
-
-#ifdef SHARP_STACK
-				remapNearest(images[_id], fragments[x][y], squaredDistancesBuffer, UPSCALE_FACTOR, localMovement + intROI_i_tl);
-#else
-				remapAdd(images[_id], fragments[x][y], (float) UPSCALE_FACTOR, localMovement + intROI_i_tl);
-#endif
-				nUsedFragsPerImage[_id]++;
-				perFragmentImageOffsets[x][y].push_back(localMovement);
-				perFragmentImageIDs[x][y].push_back(_id);
-
-
-				
-			}
-
-#ifdef _DEBUG
-			debugger.at<uchar>(y, x) = nEffectivelyStackedSquares;
-#endif
-
-
-#ifdef SHARP_STACK
-			//No normalization needed
-#else
-			fragments[x][y] *= 1.f / (float)nEffectivelyStackedSquares;
-#endif
-		}
-	}
-	time2 = high_resolution_clock::now();
-	ms_int = (int) duration_cast<milliseconds>(time2 - time1).count();
-	std::cout << "\nFragment substacking computations took " << ms_int << " ms, i.e. more than " << (ms_int / ((int)images.size() * nStackedSquares)) << " ms per sharp fragment." << std::endl;
-
-
-
-
-
-
-
-
-	// The offset of each fragment in the stack (before upscaling the coordinates)
-	std::vector<std::vector<Point2f>> fragmentOffsets(nSquareX); 
-
-	// true (1) if we know an estimate of this frag's offset, false (0) otherwise.
-	std::vector<std::vector<int>> knownFragmentsOffsets(nSquareX); 
-
-	for (int x = 1; x < sharpness[0].cols - 1; x++) 
-	{
-		fragmentOffsets[x].resize(nSquareY); // Need not be 0 initialized
-		knownFragmentsOffsets[x].resize(nSquareY);
-
-		std::fill(knownFragmentsOffsets[x].begin(), knownFragmentsOffsets[x].end(), 0);
-	}
-
-	// How many frags offsets we have an approximation of
-	int nAdjustedFrags = 0;
-	int nAdjustableFrags = (nSquareX - 2) * (nSquareY - 2);
-
-	// The offset of each image in the stack (before upscaling the coordinates). Need not be 0 initialized.
-	std::vector<Point2f> imagesOffsets(images.size()); 
-
-	// true (1) if we know an estimate of this image's offset, false (0) otherwise.
-	std::vector<int> knownImagesOffsets(images.size()); 
-	std::fill(knownImagesOffsets.begin(), knownImagesOffsets.end(), 0);
-
-
-	// Initialize the images offsets with that of the image having the most stacked fragments across the substacks.
-	{	
-		int id0 = 0;
-		float nSharps = 0.f;
-		for (int i = 0; i < images.size(); i++)
-		{
-			if (nSharps < nUsedFragsPerImage[i])
-			{
-				nSharps = (float) nUsedFragsPerImage[i];
-				id0 = i;
-			}
-		}
-		imagesOffsets[id0] = Point2f(.0f, .0f);
-		knownImagesOffsets[id0] = 1;
-	}
-
-	// The values that the vectors above will take at the next iteration.
-	std::vector<Point2f> nextImagesOffsets(images.size()); 
-	std::vector<int> nextImagesOffsetsNormalizer(images.size()); 
-
-
-	int step = 0;
-	const int MAX_STEPS = 10;
-	while (step < MAX_STEPS) // && non stationarity check with nAdjustedFrags
-	{	
-		int _initial_nAdjustedFrags = nAdjustedFrags;
-
-		for (int i = 0; i < images.size(); i++)
-		{
-			nextImagesOffsets[i] = Point2f(.0f,.0f);
-			nextImagesOffsetsNormalizer[i] = 0;
-		}
-
-		for (int x = 1; x < sharpness[0].cols - 1; x++)
-		{
-			for (int y = 1; y < sharpness[0].rows - 1; y++)
-			{
-				//if (knownFragmentsOffsets[x][y]) continue; // Vraiment ? Sans ça, on tient un procédé itératif convergent non ?
-
-				fragmentOffsets[x][y] = Point2f(.0f, .0f);
-				int nKnownImageOffsetsInThisFrag = 0;
-
-				for (int j = 0; j < perFragmentImageIDs[x][y].size(); j++)
-				{
-					int _id = perFragmentImageIDs[x][y][j];
-
-					if (knownImagesOffsets[_id])
-					{
-						fragmentOffsets[x][y] += imagesOffsets[_id] - perFragmentImageOffsets[x][y][j];
-						nKnownImageOffsetsInThisFrag++;
-					}
-				}
-
-				if (nKnownImageOffsetsInThisFrag == 0) continue;
-
-
-				fragmentOffsets[x][y] /= (float) nKnownImageOffsetsInThisFrag;
-				if (!knownFragmentsOffsets[x][y])
-				{
-					nAdjustedFrags++;
-					knownFragmentsOffsets[x][y] = 1;
-				}
-
-				
-
-				for (int j = 0; j < perFragmentImageIDs[x][y].size(); j++)
-				{
-					int _id = perFragmentImageIDs[x][y][j];
-
-					nextImagesOffsets[_id] += fragmentOffsets[x][y] + perFragmentImageOffsets[x][y][j];
-					nextImagesOffsetsNormalizer[_id]++;
-				}
-
-				
-			}
-		}
-
-
-		for (int i = 0; i < images.size(); i++)
-		{
-			if (nextImagesOffsetsNormalizer[i] == 0) continue;
-
-			imagesOffsets[i] = nextImagesOffsets[i] / (float)nextImagesOffsetsNormalizer[i];
-			knownImagesOffsets[i] = 1;
-		}
-
-		step++;
-
-		// We terminate if there has not been any new fragment covered at this step. That means the graph isnt connex, and the optimization wont progress anymore.
-		// (well, it could improve on the already known frags, but the unknown frags will never be filled)
-		if  (_initial_nAdjustedFrags == nAdjustedFrags && nAdjustedFrags != nAdjustableFrags) break;
-	}
-
-
-	Size SR_size(LR_w * UPSCALE_FACTOR, LR_h * UPSCALE_FACTOR);
-
-	Mat stack = cv::Mat::zeros(SR_size, CV_32F);
-	Mat normalizer = cv::Mat::zeros(SR_size, CV_32F);
-
-
-	// TODO first place all substacks that contain only 1 frag because matching failed (typically the sky), then write the good substacks
-	// over this initial background. Not sum, but overwrite. They are potentially poorly offset so we dont want them disrupting the good stacks.
-	
-	// We can't place the fragments at subpixel locations in the stack directly, we have to go the other way around,
-	// we extract a subPixRect from the fragment, offset by -the fractional part of its offset. To make sure the subPixRect
-	// is within the fragment, it must be 2 pixel smaller on each dimension. (1px at both ends)
-	Mat subPixShiftedSquare = Mat(Size(SQUARE_SIZE * UPSCALE_FACTOR - 2, SQUARE_SIZE * UPSCALE_FACTOR - 2), CV_32F);
-	Mat onesBlock = cv::Mat::ones(Size(SQUARE_SIZE * UPSCALE_FACTOR - 2, SQUARE_SIZE * UPSCALE_FACTOR - 2), CV_32F);
-
-	for (int x = 1; x < sharpness[0].cols - 1; x++)
-	{
-		for (int y = 1; y < sharpness[0].rows - 1; y++)
-		{
-
-			Point2f fragOffset = fragmentOffsets[x][y] * (float) UPSCALE_FACTOR;
-			
-			// Such that frag[ (i,j) + fragOffset ] = Stack[ (x0,y0) + (i,j) ]
-
-			Point2f intFragOffset(std::round(fragOffset.x), std::round(fragOffset.y));
-
-
-			Point2f center(
-				(float)SQUARE_SIZE * UPSCALE_FACTOR / 2.f,
-				(float)SQUARE_SIZE * UPSCALE_FACTOR / 2.f);
-			center += fragOffset - intFragOffset;
-
-			cv::getRectSubPix(fragments[x][y], subPixShiftedSquare.size(), center, subPixShiftedSquare);
-
-
-			Rect stackROI(
-				(x * SQUARE_SPACING - SQUARE_OVERLAP) * UPSCALE_FACTOR - (int) intFragOffset.x + 1, // +1 for clarity, as this is where it would be without the 2px shrinkage, but
-				(y * SQUARE_SPACING - SQUARE_OVERLAP) * UPSCALE_FACTOR - (int) intFragOffset.y + 1, // not really necessary since what matter is the relative position of the frags.
-				SQUARE_SIZE * UPSCALE_FACTOR - 2,
-				SQUARE_SIZE * UPSCALE_FACTOR - 2
-			);
-
-			
-			cv::add(subPixShiftedSquare, stack(stackROI), stack(stackROI));
-			cv::add(onesBlock, normalizer(stackROI), normalizer(stackROI));
-		}
-	}
-
-
-
-
-
-	cv::divide(stack, normalizer, stack);
-
-#ifdef _DEBUG
-	// Needs be in [0,1] for examination in image watch
-	stack *= 1.f/255.f;
-
-	debugger.convertTo(debugger, CV_32F);
-	debugger *= 1.f / (float) nStackedSquares;
-	
-	
-
-	stack *= 255.f;
-#endif
-
-
-	Mat deconv;
-	stack *= 1.f/255.f;
-	for (int r = 0; r < 1; r++)
-	{
-		Rect deconvROI = cv::selectROI(stack);
-		std::cout << "\n SELECTED CONVOLUTION ROI DIMENSIONS: " << deconvROI.x << " " << deconvROI.y << " " << deconvROI.width << " " << deconvROI.height << std::endl;
-		cv::destroyAllWindows();
-		//Rect deconvROI(1659, 422, 509, 375);
-		Mat toBeDeconv = stack(deconvROI).clone();
-
-		const int nSigmas = 3;
-		float sigmas[nSigmas];
-		for (int i = 0; i < nSigmas; i++)
-		{
-			sigmas[i] = (float) UPSCALE_FACTOR + (float) (i-1) * .5f;
-			deconv = LucyRichardson(toBeDeconv, 10, sigmas[i]);
-			deconv = LucyRichardson(toBeDeconv, 20, sigmas[i]);
 			deconv = LucyRichardson(toBeDeconv, 30, sigmas[i]);
 
 			Mat deconv8U = deconv.clone() * 255.f;
 			deconv8U.convertTo(deconv8U, CV_8U);
 
 			std::string name = "SR_samples\\" + seqName + "_" + std::to_string(UPSCALE_FACTOR) + "x_" + std::to_string((int)STACKED_PERCENTILE) + "percentOf"
-								+ std::to_string((int)images.size()) + "images_sigma" + std::to_string(sigmas[i]) 
+				+ std::to_string((int)RGBImages.size()) + "images_sigma" + std::to_string(sigmas[i]) 
 #ifdef SHARP_STACK
 				+ "_SHARP_STACK_"
 #else
@@ -1989,15 +1334,7 @@ cv::Mat Optimizer::RecursiveMatching(std::vector<cv::Mat> images, std::vector<ve
 	//Mat unsharpMasked = UnsharpMasking(deconv);
 	//Mat equalHist = EqualizeHistogram(deconv8U);
 
-	
 
-
-
-
-	
-	
-
-	
 	stack.convertTo(stack, CV_8U);
 
 	cv::imwrite("stack5.bmp", stack);
@@ -2008,6 +1345,7 @@ cv::Mat Optimizer::RecursiveMatching(std::vector<cv::Mat> images, std::vector<ve
 
 	return stack;
 }
+
 
 
 cv::Mat Optimizer::LucyRichardson(cv::Mat img, int nIterations, float sigmaG)
