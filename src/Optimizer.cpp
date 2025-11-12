@@ -140,15 +140,13 @@ void Optimizer::LoadAndPreProcess(IMAGE_SEQ _imSeq, std::vector<cv::Mat>& dstBay
 		}
 
 
-		dstRGBImgs[i] = img(stackingROI);
-		//cvtColor(dstRGBImgs[i], dstBayerImgs[i], COLOR_BayerRGGB2GRAY);
-		Mat temp;
-		cvtColor(dstRGBImgs[i], temp, COLOR_BayerRGGB2BGR);
-		cvtColor(temp, dstBayerImgs[i], COLOR_BGR2GRAY);
+		dstBayerImgs[i] = img(stackingROI);
+		cvtColor(dstBayerImgs[i], dstRGBImgs[i], COLOR_BayerRGGB2GRAY);
+
 	}
 
 	int i = 0;
-	while (true)
+	while (!true)
 	{
 		imshow("Raws", dstRGBImgs[i%200]);
 		waitKey(50);
