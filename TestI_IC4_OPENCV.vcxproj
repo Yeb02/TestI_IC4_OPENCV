@@ -18,6 +18,14 @@
       <Platform>x64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\Optimizer.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\delaunator.h" />
+    <ClInclude Include="src\Optimizer.h" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
@@ -138,14 +146,6 @@
       <AdditionalDependencies>opencv_world4110.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
-  <ItemGroup>
-    <ClCompile Include="Optimizer.cpp" />
-    <ClCompile Include="TestI_IC4_OPENCV.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="delaunator.h" />
-    <ClInclude Include="Optimizer.h" />
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

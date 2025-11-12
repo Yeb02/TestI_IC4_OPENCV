@@ -15,18 +15,18 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="TestI_IC4_OPENCV.cpp">
+    <ClCompile Include="src\main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Optimizer.cpp">
+    <ClCompile Include="src\Optimizer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Optimizer.h">
+    <ClInclude Include="src\delaunator.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="delaunator.h">
+    <ClInclude Include="src\Optimizer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
