@@ -124,24 +124,32 @@ void Optimizer::LoadAndPreProcess(IMAGE_SEQ _imSeq, std::vector<cv::Mat>& dstBay
 
 		if (i == 0)
 		{
-			stackingROI = cv::selectROI(img);
+			bool alreadyPicked = !true;
+			if (alreadyPicked)
+			{
+				stackingROI = Rect(720, 346, 476, 246);
+			}
+			else
+			{
+				stackingROI = cv::selectROI(img);
 
-			auto _m2 = [] (int _v) {return (_v/2)*2;};
+				auto _m2 = [] (int _v) {return (_v/2)*2;};
 
-			stackingROI.x = _m2(stackingROI.x);
-			stackingROI.y = _m2(stackingROI.y);
-			stackingROI.width = _m2(stackingROI.width);
-			stackingROI.height = _m2(stackingROI.height);
+				stackingROI.x = _m2(stackingROI.x);
+				stackingROI.y = _m2(stackingROI.y);
+				stackingROI.width = _m2(stackingROI.width);
+				stackingROI.height = _m2(stackingROI.height);
 
 
-			std::cout << "\n SELECTED IMAGE ROI: " << stackingROI.x << " " << stackingROI.y << " " << stackingROI.width << " " << stackingROI.height << std::endl;
-			cv::destroyAllWindows();
-			//Rect stackingROI(1659, 422, 509, 375);
+				std::cout << "\n SELECTED IMAGE ROI: " << stackingROI.x << ", " << stackingROI.y << ", " << stackingROI.width << ", " << stackingROI.height << std::endl;
+				cv::destroyAllWindows();
+			}
 		}
 
 
 		dstBayerImgs[i] = img(stackingROI);
-		cvtColor(dstBayerImgs[i], dstRGBImgs[i], COLOR_BayerRGGB2GRAY);
+		cvtColor(dstBayerImgs[i], dstRGBImgs[i], COLOR_BayerRGGB2BGR);
+		//cvtColor(dstBayerImgs[i], dstRGBImgs[i], COLOR_BayerRGGB2GRAY);
 
 	}
 
@@ -387,6 +395,7 @@ std::vector<Point2f> Optimizer::computeOffsetsOld(std::vector<std::vector<cv::Po
 	return imageOffsets;
 }
 
+
 void Optimizer::DelaunayUnwarping(std::vector<cv::Mat> images, std::vector<std::vector<cv::Point2f>> shiftedPoints)
 {
 	std::vector<cv::Mat> results(images.size());
@@ -585,10 +594,10 @@ void Optimizer::DelaunayUnwarping(std::vector<cv::Mat> images, std::vector<std::
 // in the sharpness computations due to the inaccurate registration of the patch across images of the sequence (+ noise within)
 //const int SQUARE_OVERLAP = 0; // on each side.
 //const int SQUARE_SIZE = SQUARE_SPACING + 2*SQUARE_OVERLAP; 
-const int SQUARE_SIZE = 20; 
+const int SQUARE_SIZE = 50; 
 // We shift the individual squares before computing the sharpness, to minimize the variation in laplacian variance due to registration errors. 
 // The margin size should be bigger than the maximal expected displacement in the sequence, to ensure we dont leave the image.
-const int SQUARE_GRID_MARGIN = 5; 
+const int SQUARE_GRID_MARGIN = 20; 
 
 
 
@@ -751,24 +760,27 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, 
 	const int UPSCALE_FACTOR = 2;
 
 	// between 0 and 100, in practice between 5 and 25
-	const float STACKED_PERCENTILE = 15.f;
+	const float STACKED_PERCENTILE = 10.f;
 
 	int LR_w = RGBImages[0].cols; // Initial (low-res) image width
 	int LR_h = RGBImages[0].rows; // Initial (low-res) image height
 	int nSquareX = (LR_w - 2*SQUARE_GRID_MARGIN) / SQUARE_SIZE;
 	int nSquareY = (LR_h - 2*SQUARE_GRID_MARGIN) / SQUARE_SIZE;
 
-	// LK params
-
+	
+	// GOOD FEATURES TO TRACK HYPERPARAMETERS
 	const int MARGIN_SIZE = 10;  // Points that are near the edges are likely to disappear from frame to frame due to distortions/vibrations. We ignore them.
 	const int MAX_POINTS_TRACKED = 100;
 	const double MIN_DISTANCE = 15.;
 	const double QUALITY_LEVEL = .1; // default .3
-	const float ERR_REFERENCE_THRESHOLD = 5.f; 
-	const float ERR_SEQUENCE_THRESHOLD = 5.f;  
-	const int BLOCK_SIZE = 2 * 1 + 1;
-	const int GRADIENT_SIZE = 2 * 1 + 1;
+	const int BLOCK_SIZE = 2 * 2 + 1;
+	const int GRADIENT_SIZE = 2 * 2 + 1;
 
+	// LUCAS KANADE FLOW MATCHING HYPERPARAMETERS
+	const float ERR_REFERENCE_THRESHOLD = 500.f; 
+	const float ERR_SEQUENCE_THRESHOLD = 500.f;  
+	const int LK_WINDOW_SIZE = 15;
+	const int LK_PYRAMID_LEVELS = 2; // Starts at 0.
 
 	// TODO think about how to spread out references across the sequence a bit more. Luminosity could vary and invalidate the ref at the start. Hmmmm.
 
@@ -793,7 +805,7 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, 
 		Size winSize = Size(BLOCK_SIZE / 2, BLOCK_SIZE / 2);
 		Size zeroZone = Size(-1, -1);
 		TermCriteria _criteria = TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 40, 0.001);
-		cornerSubPix(RGBImages[i](featureFinderROI), referencePoints[i], winSize, zeroZone, _criteria);
+		cornerSubPix(RGBImages[i](featureFinderROI), referencePoints[i], winSize, zeroZone, _criteria); // I did not notice any benefit from this, but the computational cost seems negligible, so...
 
 		for (int j = 0; j < referencePoints[i].size(); j++)
 		{
@@ -849,7 +861,7 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, 
 				vector<float> err;
 				TermCriteria criteria = TermCriteria((TermCriteria::COUNT)+(TermCriteria::EPS), 10, 0.03);
 
-				calcOpticalFlowPyrLK(RGBImages[ref_id], RGBImages[i], referencePoints[ref_id], potentialPoints, status, err, Size(15, 15), 2, criteria, 0, 1.0E-3);
+				calcOpticalFlowPyrLK(RGBImages[ref_id], RGBImages[i], referencePoints[ref_id], potentialPoints, status, err, Size(LK_WINDOW_SIZE, LK_WINDOW_SIZE), LK_PYRAMID_LEVELS, criteria, 0, 1.0E-3);
 
 
 				int nMatches = 0;
@@ -1031,10 +1043,12 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, 
 	// In each image of the sequence, find the LK features of the references, and compute for each square patch its estimated offset in the absolute referential.
 	for (int i = N_REFERENCE_FRAMES; i < RGBImages.size(); i++)
 	{
-		currentPerSquareNormalizer = .0f;
-
+		
+		// Barycentre of the offsets of the tracked points across the references. Used to give an offset to pixels in the image that are too far from any tracked point to have any meaningful "nearest neighbour".
 		Point2f currentFrameAbsoluteOffset(.0f, .0f);
 		int totalPointsMatched = 0;
+
+		currentPerSquareNormalizer = 0;
 
 		for (int ref_id = 0; ref_id < N_REFERENCE_FRAMES; ref_id++)
 		{
@@ -1046,7 +1060,7 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, 
 			vector<float> err;
 			TermCriteria criteria = TermCriteria((TermCriteria::COUNT)+(TermCriteria::EPS), 10, 0.03);
 
-			calcOpticalFlowPyrLK(RGBImages[ref_id], RGBImages[i], referencePoints[ref_id], potentialPoints, status, err, Size(15, 15), 2, criteria, 0, 1.0E-3);
+			calcOpticalFlowPyrLK(RGBImages[ref_id], RGBImages[i], referencePoints[ref_id], potentialPoints, status, err, Size(LK_WINDOW_SIZE, LK_WINDOW_SIZE), LK_PYRAMID_LEVELS, criteria, 0, 1.0E-3);
 
 #ifdef _DEBUG
 			Mat refIm = RGBImages[ref_id].clone();
@@ -1069,8 +1083,14 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, 
 
 					nMatches++;
 
-					int _x = floorf(potentialPoints[j].x / (float) SQUARE_SIZE);
-					int _y = floorf(potentialPoints[j].y / (float) SQUARE_SIZE);
+
+					// TODO ransac
+
+
+
+					// Fill the coarse grid with "nearest neighbour" offsets, in a 3x3 area around the points.
+					int _x = (int) floorf((potentialPoints[j].x - SQUARE_GRID_MARGIN) / (float)SQUARE_SIZE);
+					int _y = (int) floorf((potentialPoints[j].y - SQUARE_GRID_MARGIN) / (float) SQUARE_SIZE);
 
 					for (int _xx = -1; _xx <= 1; _xx++)
 					{
@@ -1087,13 +1107,15 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, 
 
 							Point2f _d = potentialPoints[j] - squareCenter;
 
-							float _weight = 1.f - sqrtf(_d.x * _d.x + _d.y * _d.y) / ((float) SQUARE_SIZE * 1.5f); 
+							float _weight = 1.f - sqrtf(_d.x * _d.x + _d.y * _d.y) / ((float) SQUARE_SIZE * 1.5f * 1.4143f); // between 0 and 1
+
+							if (_weight < 0) __debugbreak();
 
 							perSquareAbsoluteOffset[i].at<Point2f>(sy, sx) += _weight * (referencePointsAbsoluteCoordinates[ref_id][j] - potentialPoints[j]);
 							currentPerSquareNormalizer.at<float>(sy, sx) += _weight;
 						}
 					}
-					// TODO ransac
+					
 #ifdef _DEBUG
 					cv::circle(refIm, referencePoints[ref_id][j], 2, 255);
 					cv::circle(currIm, potentialPoints[j], 2, 255);
@@ -1149,23 +1171,22 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, 
 
 		currentFrameAbsoluteOffset /= (float) totalPointsMatched;
 
-		constexpr float globalOffsetWeight = .5f;
 
-		perSquareAbsoluteOffset[i] = (perSquareAbsoluteOffset[i] + Scalar(globalOffsetWeight * currentFrameAbsoluteOffset.x, globalOffsetWeight * currentFrameAbsoluteOffset.y)) /
-			(currentPerSquareNormalizer + globalOffsetWeight);
-
-
-	
 
 		// Compute sharpnesses:
 
 		cv::Laplacian(RGBImages[i], laplacianBuffer, CV_32F);
 
-		
 		for (int x = 0; x < nSquareX; x++)
 		{
 			for (int y = 0; y < nSquareY; y++)
 			{
+				// I would have done this cleanly outside of the loops if OpenCV allowed 2channels * 1channel...
+				constexpr float globalOffsetWeight = .5f;
+				perSquareAbsoluteOffset[i].at<Point2f>(y, x) += globalOffsetWeight * currentFrameAbsoluteOffset;
+				perSquareAbsoluteOffset[i].at<Point2f>(y, x) /= currentPerSquareNormalizer.at<float>(y, x) + globalOffsetWeight;
+
+
 				// Incorrect registration of the patches completely ruins the sorting by sharpness. This solution is okayish.
 
 				Point2f registrationOffset = perSquareAbsoluteOffset[i].at<Point2f>(y, x);
@@ -1181,7 +1202,7 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, 
 					Scalar varLaplacian;
 					Scalar meanLaplacian;
 					cv::meanStdDev(RGBImages[i](_roi), meanLaplacian, varLaplacian);
-					sharpnesses[x][y][i] = (float)varLaplacian[0];
+					sharpnesses[x][y][i] = (float)varLaplacian[0] + .1f; // .1f to distinguish between valid squares that are constant, and squares that are invalid because either outside of the frame or from the ref frames.
 				}	
 			}
 		}
@@ -1201,8 +1222,13 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, 
 	
 	Size SR_size(LR_w * UPSCALE_FACTOR, LR_h * UPSCALE_FACTOR);
 
-	Mat stack = cv::Mat::zeros(SR_size, CV_32F);
-	Mat normalizer = cv::Mat::zeros(SR_size, CV_32F);
+	vector<Mat> stack(3);			 // 1 channel per color
+	vector<Mat> normalizer(3);       // 1 channel per color
+	for (int channel = 0; channel < 3; channel++)
+	{
+		stack[channel] = cv::Mat::zeros(SR_size, CV_32F);
+		normalizer[channel] = cv::Mat::zeros(SR_size, CV_32F);
+	}
 
 	vector<int> ids(RGBImages.size());
 
@@ -1236,17 +1262,81 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, 
 					return s[id_a] > s[id_b];
 				});
 
-			
+
 			Point2i patchTopLeft(x * SQUARE_SIZE + SQUARE_GRID_MARGIN, y * SQUARE_SIZE + SQUARE_GRID_MARGIN);
+			
+			if (true)
+			{
+				const int upscale = 5;
+				Mat smallFrag(Size(SQUARE_SIZE, SQUARE_SIZE), CV_8U);
+				Mat bigFrag(Size(SQUARE_SIZE * upscale, SQUARE_SIZE * upscale), CV_8U);
+
+				Point2f commonFragCenter( 
+					(float)x * ((float)SQUARE_SIZE + .5f) + (float)SQUARE_GRID_MARGIN,
+					(float)y * ((float)SQUARE_SIZE + .5f) + (float)SQUARE_GRID_MARGIN);
+
+				for (int i = 0; i < 50; i++)
+				{
+
+					int id = ids[i];
+
+					//Point2f squareOffset(.0f, .0f);
+					//float _normalizer = .0f;
+					//for (int _xx = -1; _xx <= 1; _xx++)
+					//{
+					//	for (int _yy = -1; _yy <= 1; _yy++)
+					//	{
+					//		int sx = _xx + x;
+					//		int sy = _yy + y;
+
+					//		if (sx < 0 || sx > nSquareX - 1 || sy < 0 || sy > nSquareY - 1) continue;
+
+					//		_normalizer += 1.f;
+					//		squareOffset += perSquareAbsoluteOffset[id].at<Point2f>(sy, sx);
+					//	}
+					//}
+					//squareOffset /= _normalizer;
+
+
+					Point2f squareOffset = perSquareAbsoluteOffset[id].at<Point2f>(y, x);
+					
+					Point2f center = commonFragCenter - squareOffset;
+					
+					getRectSubPix(RGBImages[id], Size(SQUARE_SIZE,SQUARE_SIZE), center, smallFrag, CV_8U);
+					resize(smallFrag, bigFrag, Size(), upscale, upscale);
+					
+
+					std::cout << s[id] << std::endl;
+					//std::cout << _roi.x << " " << _roi.y << " " << squareOffset.x << " " << squareOffset.y << std::endl;
+
+					
+					imshow("frag", bigFrag);
+					waitKey(50);
+				}
+				for (int i = 0; i < 50; i++)
+				{
+
+					int id = ids[i];
+
+					Point2f center = commonFragCenter;
+
+					getRectSubPix(RGBImages[id], Size(SQUARE_SIZE,SQUARE_SIZE), center, smallFrag, CV_8U);
+					resize(smallFrag, bigFrag, Size(), upscale, upscale);
+					imshow("frag", bigFrag);
+					waitKey(50);
+				}
+				std::cout << x << " " << y << std::endl;
+			}
+
 
 			for (int i = 0; i < nStackedSquares; i++)
 			{
 				int id = ids[i];
 				
 				// The copied patch from the src sequence image is coarsely positioned, rounded to integer coordinates so within 1 px of its absolute position.
-				// This whole approach forces us to transform square patches from the seq ims into non square areas of the stack. We use a normalizer matrix to normalize each pixel
+				// This whole approach forces us to transform square from the seq ims into non square areas of the stack. We use a normalizer matrix to normalize each pixel
 				// of the stack once we are done stacking. Hopefully (more and more likely as nStackedSquares grows), the areas overlap sufficently for the stack to be fully covered.
-				// We can always have the patches overlap like previously, but that increases costs (not constrained part ?) and is no guarantee. (see SQUARE_SPACING's definition)
+				// We can always have the squares overlap like previously, but that increases costs (not constrained part ?) and is no guarantee. (see SQUARE_SPACING's definition)
 
 				Point2f squareRegistrationOffset = perSquareAbsoluteOffset[id].at<Point2f>(y, x);
 				Point2i seqimTopLeft(
@@ -1254,20 +1344,52 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, 
 					patchTopLeft.y - (int)squareRegistrationOffset.y
 				);
 
-				//Perform bilinear upscaling of the patch in the id-th image into the stack, with the warping matrix perPointAbsoluteOffset[id].
+
+
+				Point2f squareOffset(.0f, .0f);
+				Point2f squareCenter(
+					(float) SQUARE_GRID_MARGIN + (float)SQUARE_SIZE* ((float)x + .5f),
+					(float) SQUARE_GRID_MARGIN + (float)SQUARE_SIZE* ((float)y + .5f));
+				float _normalizer = 0.f;
+
+				for (int _xx = -1; _xx <= 1; _xx++)
+				{
+					for (int _yy = -1; _yy <= 1; _yy++)
+					{
+						int sx = _xx + x;
+						int sy = _yy + y;
+
+						if (sx < 0 || sx > nSquareX-1 || sy < 0 || sy > nSquareY-1) continue;
+
+						Point2f currSquareCenter(
+							(float) SQUARE_GRID_MARGIN + (float)SQUARE_SIZE* ((float)sx + .5f),
+							(float) SQUARE_GRID_MARGIN + (float)SQUARE_SIZE* ((float)sy + .5f));
+
+						Point2f _d = currSquareCenter - squareCenter;
+
+						float _weight = 1.f - sqrtf(_d.x * _d.x + _d.y * _d.y) / ((float) SQUARE_SIZE * 1.5f * 1.4143f); // between 0 and 1
+
+						squareOffset += _weight * perSquareAbsoluteOffset[id].at<Point2f>(sy, sx);
+						_normalizer += _weight;
+					}
+				}
+				squareOffset /= _normalizer;
+				squareOffset *= (float) UPSCALE_FACTOR;
+
+
+				//Perform per pixel bilinear upscaling of the square in the id-th image into the stack, warping the id-th image with values from perSquareAbsoluteOffset.
 				for (int xx = seqimTopLeft.x; xx < seqimTopLeft.x + SQUARE_SIZE; xx++)
 				{
 					for (int yy = seqimTopLeft.y; yy < seqimTopLeft.y + SQUARE_SIZE; yy++)
 					{
-						Point2f pixOffset(.0f, .0f);
+						// The bayer pattern is BG . The result of the following computation makes channel = 1 if green, 2 if blue, 0 if red
+					    //					    GR
+						int isGreen = (xx % 2) ^ (yy % 2); // Bitwise XOR.
+						int channel = isGreen + (1 - isGreen) * 2 * (xx % 2);
 
-
-						// TODO sum over neighboring squares.
-
-						pixOffset *= (float) UPSCALE_FACTOR;
-
+						
 						Point2f stackxxyy = Point2f((float)(UPSCALE_FACTOR * xx), (float)(UPSCALE_FACTOR * yy));
-						Point2f inStackPosition = stackxxyy + pixOffset;
+						Point2f inStackPosition = stackxxyy + squareOffset;
 
 						shiftedPatch = 0.0f;
 
@@ -1279,30 +1401,35 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, 
 
 						Rect stackROI((int)floor_x, (int)floor_y, UPSCALE_FACTOR + 1, UPSCALE_FACTOR + 1);
 
-						add(normalizer(stackROI), shiftedPatch, normalizer(stackROI));
+						if (stackROI.x < 0 || stackROI.y < 0) __debugbreak();
+
+						add(normalizer[channel](stackROI), shiftedPatch, normalizer[channel](stackROI));
 
 						shiftedPatch *= (float) bayerImages[id].at<uchar>(yy, xx);
 
-						add(stack(stackROI), shiftedPatch, stack(stackROI));
+						add(stack[channel](stackROI), shiftedPatch, stack[channel](stackROI));
 					}
 				}
 			}
 		}
 	}
 
-	cv::divide(stack, normalizer, stack);
+	for (int channel = 0; channel < 3; channel++) cv::divide(stack[channel], normalizer[channel], stack[channel]);
 
 	
-	stack *= 1.f/255.f;
+
+	//  Because openCV doesnt normalize its windows...
+	for (int channel = 0; channel < 3; channel++) stack[channel] *= 1.f/255.f;
 
 	Mat deconv;
 	for (int r = 0; r < 1; r++)
 	{
-		Rect deconvROI = cv::selectROI(stack);
+		Rect deconvROI = cv::selectROI(stack[1]);
 		std::cout << "\n SELECTED CONVOLUTION ROI DIMENSIONS: " << deconvROI.x << " " << deconvROI.y << " " << deconvROI.width << " " << deconvROI.height << std::endl;
 		cv::destroyAllWindows();
-		//Rect deconvROI(1659, 422, 509, 375);
-		Mat toBeDeconv = stack(deconvROI).clone();
+
+
+		Mat toBeDeconv = stack[1](deconvROI).clone();
 
 		const int nSigmas = 3;
 		float sigmas[nSigmas];
@@ -1313,35 +1440,645 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, 
 			deconv = LucyRichardson(toBeDeconv, 20, sigmas[i]);
 			deconv = LucyRichardson(toBeDeconv, 30, sigmas[i]);
 
-			Mat deconv8U = deconv.clone() * 255.f;
-			deconv8U.convertTo(deconv8U, CV_8U);
+			Mat deconv8U;
+			deconv.convertTo(deconv8U, CV_8U);
 
 			std::string name = "SR_samples\\" + seqName + "_" + std::to_string(UPSCALE_FACTOR) + "x_" + std::to_string((int)STACKED_PERCENTILE) + "percentOf"
 				+ std::to_string((int)RGBImages.size()) + "images_sigma" + std::to_string(sigmas[i]) 
-#ifdef SHARP_STACK
-				+ "_SHARP_STACK_"
-#else
-				+ "_AVERAGE_STACK_"
-#endif
 				+ std::to_string(time(0)) + ".bmp";
 			cv::imwrite(name, deconv8U);
 		}
 	}
-	stack *= 255.f;
+
+	for (int channel = 0; channel < 3; channel++) stack[channel] *= 255.f;
 
 	//Mat unsharpMasked = UnsharpMasking(deconv);
 	//Mat equalHist = EqualizeHistogram(deconv8U);
 
+	Mat coloredStack32F, coloredStack8U;
 
-	stack.convertTo(stack, CV_8U);
+	// Correcting chromatic aberration:
+	//int offset = 4;
+	//stack[0] = stack[0](Rect(offset,0, stack[0].cols-offset,stack[0].rows-offset)); // blue
+	//stack[1] = stack[1](Rect(0,0,	   stack[1].cols-offset,stack[1].rows-offset)); // green
+	//stack[2] = stack[2](Rect(0,0,	   stack[2].cols-offset,stack[2].rows-offset));	// red
 
-	cv::imwrite("stack5.bmp", stack);
 
-	cv::imshow("Stack", stack);
+	cv::merge(stack, coloredStack32F);
+
+	coloredStack32F.convertTo(coloredStack8U, CV_8U);
+
+	cv::imwrite("stack.bmp", coloredStack8U);
+
+	cv::imshow("Stack", coloredStack8U);
 
 	int keyboard = waitKey(0);
 
-	return stack;
+	return coloredStack8U;
+}
+
+
+
+cv::Mat Optimizer::WeightedTotalCombination(std::vector<cv::Mat> bayerImages, std::vector<cv::Mat> RGBImages)
+{
+	const int N_REFERENCE_FRAMES = 10;
+
+	const int UPSCALE_FACTOR = 3;
+
+	int LR_w = RGBImages[0].cols; // Initial (low-res) image width
+	int LR_h = RGBImages[0].rows; // Initial (low-res) image height
+	int nSquareX = (LR_w - 2*SQUARE_GRID_MARGIN) / SQUARE_SIZE;
+	int nSquareY = (LR_h - 2*SQUARE_GRID_MARGIN) / SQUARE_SIZE;
+
+
+	// GOOD FEATURES TO TRACK HYPERPARAMETERS
+	const int MARGIN_SIZE = 10;  // Points that are near the edges are likely to disappear from frame to frame due to distortions/vibrations. We ignore them.
+	const int MAX_POINTS_TRACKED = 100;
+	const double MIN_DISTANCE = 15.;
+	const double QUALITY_LEVEL = .1; // default .3
+	const int BLOCK_SIZE = 2 * 2 + 1;
+	const int GRADIENT_SIZE = 2 * 2 + 1;
+
+	// LUCAS KANADE FLOW MATCHING HYPERPARAMETERS
+	const float ERR_REFERENCE_THRESHOLD = 500.f; 
+	const float ERR_SEQUENCE_THRESHOLD = 500.f;  
+	const int LK_WINDOW_SIZE = 15;
+	const int LK_PYRAMID_LEVELS = 2; // Starts at 0.
+
+	// TODO think about how to spread out references across the sequence a bit more. Luminosity could vary and invalidate the ref at the start. Hmmmm.
+
+
+	vector<vector<Point2f>> referencePoints(N_REFERENCE_FRAMES);
+
+
+	vector<Mat> GRAYImages(RGBImages.size());
+
+	for (int i = 0; i < RGBImages.size(); i++)
+	{
+		cvtColor(RGBImages[i], GRAYImages[i], COLOR_BGR2GRAY);
+	}
+
+	// In the reference frames, find the features that we will track across the image sequence.
+	for (int i = 0; i < N_REFERENCE_FRAMES; i++)
+	{
+		Rect featureFinderROI(MARGIN_SIZE, MARGIN_SIZE, RGBImages[i].cols - 2 * MARGIN_SIZE, RGBImages[i].rows - 2 * MARGIN_SIZE);
+
+		goodFeaturesToTrack(GRAYImages[i](featureFinderROI), referencePoints[i], MAX_POINTS_TRACKED, QUALITY_LEVEL, MIN_DISTANCE, Mat(), BLOCK_SIZE, GRADIENT_SIZE, false, 0.04);
+
+		//Mat imcl = RGBImages[i](featureFinderROI).clone();
+		//for (int j = 0; j < referencePoints[i].size(); j++)
+		//{
+		//	cv::circle(imcl, referencePoints[i][j], 2, 255);
+		//}
+		//__debugbreak();
+
+		Size winSize = Size(BLOCK_SIZE / 2, BLOCK_SIZE / 2);
+		Size zeroZone = Size(-1, -1);
+		TermCriteria _criteria = TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 40, 0.001);
+		cornerSubPix(GRAYImages[i](featureFinderROI), referencePoints[i], winSize, zeroZone, _criteria); // I did not notice any benefit from this, but the computational cost seems negligible, so...
+
+		for (int j = 0; j < referencePoints[i].size(); j++)
+		{
+			referencePoints[i][j] += Point2f((float)MARGIN_SIZE, (float)MARGIN_SIZE);
+		}
+
+		std::cout << "REF IMAGE " << i << ", N POINTS = " << referencePoints[i].size() << std::endl;
+	}
+
+
+
+
+
+	// Contains the position of each frame relative to the first reference frame, which is considered to be the absolute referential. (therefore absoluteOffsets[0] = (0,0))
+	// If p = absoluteOffsets[ref_id], then ref_im[0]((x,y) + p) = ref_im[ref_id]((x,y)). (Coarsest approx. Initially necessary, then we will interpolate tracked points)
+	vector<Point2f> absoluteOffsets(N_REFERENCE_FRAMES);
+
+	vector<vector<Point2f>> referencePointsAbsoluteCoordinates(N_REFERENCE_FRAMES);
+
+	// Find the absoluteOffsets of the reference frames and the absolute positions of the reference point. 
+	{
+		// Holds the barycenter of the points in the ref frame that were matched in this image, so not a constant.
+		vector<Point2f> referenceBarycenters(N_REFERENCE_FRAMES);
+		// Holds the barycenter of the points that were matched in this image with the ref frame.
+		vector<Point2f> currentBarycenters(N_REFERENCE_FRAMES);
+
+		// positionOfReferencePointsInOtherReferences[i][j] holds the vector of positions in j of the features originating in i tracked in j.
+		vector<vector<vector<Point2f>>> positionOfReferencePointsInOtherReferences(N_REFERENCE_FRAMES);
+		for (int i = 0; i < N_REFERENCE_FRAMES; i++) positionOfReferencePointsInOtherReferences[i].resize(N_REFERENCE_FRAMES);
+
+		// A util to compute absoluteOffsets. If p = mutualRelativeOffsetsOfTheReferences[i][ref_id], then im[ref_id](x,y) = im[i](x+px,y+py) 
+		vector<vector<Point2f>> mutualRelativeOffsetsOfTheReferences(N_REFERENCE_FRAMES);
+
+
+
+		// Match the LK points between reference frames
+		for (int i = 0; i < N_REFERENCE_FRAMES; i++)
+		{
+			mutualRelativeOffsetsOfTheReferences[i].resize(N_REFERENCE_FRAMES);
+
+			// Match the current frame to the reference frames.
+			for (int ref_id = 0; ref_id < N_REFERENCE_FRAMES; ref_id++)
+			{
+				referenceBarycenters[ref_id] = Point2f(.0f, .0f);
+				currentBarycenters[ref_id] = Point2f(.0f, .0f);
+
+				if (ref_id == i) continue;
+
+				std::vector<Point2f> potentialPoints;
+
+				// calculate optical flow
+				vector<uchar> status;
+				vector<float> err;
+				TermCriteria criteria = TermCriteria((TermCriteria::COUNT)+(TermCriteria::EPS), 10, 0.03);
+
+				calcOpticalFlowPyrLK(GRAYImages[ref_id], GRAYImages[i], referencePoints[ref_id], potentialPoints, status, err, Size(LK_WINDOW_SIZE, LK_WINDOW_SIZE), LK_PYRAMID_LEVELS, criteria, 0, 1.0E-3);
+
+
+				int nMatches = 0;
+
+				positionOfReferencePointsInOtherReferences[ref_id][i].resize(referencePoints[ref_id].size());
+
+				for (uint j = 0; j < referencePoints[ref_id].size(); j++)
+				{
+					// Select good points
+					if (status[j] == 1 && err[j] < ERR_REFERENCE_THRESHOLD) {
+						currentBarycenters[ref_id] += potentialPoints[j];
+						referenceBarycenters[ref_id] += referencePoints[ref_id][j];
+
+						// Note the order of indices
+						positionOfReferencePointsInOtherReferences[ref_id][i][j] = potentialPoints[j];
+
+						nMatches++;
+					}
+					else
+					{
+						// Note the order of indices
+						positionOfReferencePointsInOtherReferences[ref_id][i][j] = Point2f(std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::quiet_NaN());
+					}
+				}
+				//std::cerr << "nMatches at step " << i << " : " << nMatches << " / " << referencePoints[ref_id].size() << std::endl;
+
+				// TODO ransac
+
+				if (nMatches > 0)
+				{
+					currentBarycenters[ref_id] /= (float)nMatches;
+					referenceBarycenters[ref_id] /= (float)nMatches;
+				}
+				else
+				{
+					std::cout << "NO MATCHES BETWEEN 2 REF FRAMES !!!" << std::endl;
+				}
+
+				// fill the mutualRelativeOffsetsOfTheReferences matrix.
+				mutualRelativeOffsetsOfTheReferences[i][ref_id] = currentBarycenters[ref_id] - referenceBarycenters[ref_id];
+			}
+
+
+			for (int ref_id = 0; ref_id < N_REFERENCE_FRAMES; ref_id++)
+			{
+				mutualRelativeOffsetsOfTheReferences[i][ref_id] = currentBarycenters[ref_id] - referenceBarycenters[ref_id];
+			}
+		}
+
+
+
+		// BARYCENTRE MATCHING:
+		// The matrix mutualRelativeOffsetsOfTheReferences holds the mutual (potentialy asymmetrical) positions of the reference images. The following iterative algorithm
+		// finds an optimum for the absolute position of each of the reference frames, stored in absoluteOffsets. We use the first frame's top left as the (0, 0).
+		{
+			//For all i, j < N_REFERENCE_FRAMES, for any pixel (x,y),  we want im[0]( (x,y) + currAbsolutePos[i]) = im[i]( (x,y) ) 
+			// Trivially equivalent to im[i]( (x,y) - currAbsolutePos[i]) = im[j]( (x,y) - currAbsolutePos[j]) 
+			std::vector<Point2f> currAbsolutePos(N_REFERENCE_FRAMES);
+			std::vector<Point2f> prevAbsolutePos(N_REFERENCE_FRAMES);
+			for (int ref_id = 0; ref_id < N_REFERENCE_FRAMES; ref_id++)
+			{
+				currAbsolutePos[ref_id] = Point2f(.0f, .0f);
+				prevAbsolutePos[ref_id] = Point2f(.0f, .0f);
+			}
+
+			const int _maxIter = 10;
+			for (int iter = 0; iter < _maxIter; iter++)
+			{
+
+				for (int ref_id_i = 0; ref_id_i < N_REFERENCE_FRAMES; ref_id_i++)
+				{
+
+					for (int ref_id_j = 0; ref_id_j < N_REFERENCE_FRAMES; ref_id_j++)
+					{
+						currAbsolutePos[ref_id_i] += prevAbsolutePos[ref_id_j] - mutualRelativeOffsetsOfTheReferences[ref_id_i][ref_id_j];
+					}
+					currAbsolutePos[ref_id_i] /= (float)N_REFERENCE_FRAMES;
+				}
+
+
+				prevAbsolutePos = currAbsolutePos;
+
+				// We keep the first image at 0,0 for a fixed reference, in case the matrix mutualRelativeOffsetsOfTheReferences is not anti symmetrical. 
+				// (it should be ideally, but the error in measurements is why we are here in the first place.)
+				for (int ref_id_i = 0; ref_id_i < N_REFERENCE_FRAMES; ref_id_i++) prevAbsolutePos[ref_id_i] -= currAbsolutePos[0];
+			}
+
+			for (int ref_id = 0; ref_id < N_REFERENCE_FRAMES; ref_id++)
+			{
+				absoluteOffsets[ref_id] = currAbsolutePos[ref_id];
+			}
+
+			// Visualizing the alignement for monitoring:
+			/*while (true)
+			{
+			for (int ref_id = 0; ref_id < N_REFERENCE_FRAMES; ref_id++)
+			{
+			Rect alignementTestRoi(MARGIN_SIZE - absoluteOffsets[ref_id].x, MARGIN_SIZE - absoluteOffsets[ref_id].y, featureFinderROI.width, featureFinderROI.height);
+			cv::imshow("alignement", images[ref_id](alignementTestRoi));
+			int keyboard = waitKey(50);
+			}
+			}*/
+		}
+
+
+
+		// Fill referencePointsAbsoluteCoordinates, combining information from positionOfReferencePointsInOtherReferences ant the barycentres.
+		for (int ref_id = 0; ref_id < N_REFERENCE_FRAMES; ref_id++)
+		{
+			referencePointsAbsoluteCoordinates[ref_id].resize(referencePoints[ref_id].size());
+
+			vector<int> nMatchesPerPoint(referencePoints[ref_id].size());
+			std::fill(nMatchesPerPoint.begin(), nMatchesPerPoint.end(), 0);
+
+			for (int matched_ref_id = 0; matched_ref_id < N_REFERENCE_FRAMES; matched_ref_id++)
+			{
+				if (ref_id == matched_ref_id) continue;
+
+
+				for (uint j = 0; j < referencePoints[ref_id].size(); j++)
+				{
+					if (!std::isnan(positionOfReferencePointsInOtherReferences[ref_id][matched_ref_id][j].x)) {
+						referencePointsAbsoluteCoordinates[ref_id][j] += positionOfReferencePointsInOtherReferences[ref_id][matched_ref_id][j] + absoluteOffsets[ref_id];
+						nMatchesPerPoint[j]++;
+					}
+				}
+
+			}
+
+			for (uint j = 0; j < referencePoints[ref_id].size(); j++)
+			{
+				if (nMatchesPerPoint[j] > 0) {
+					referencePointsAbsoluteCoordinates[ref_id][j] /= (float) nMatchesPerPoint[j];
+				}
+				else
+				{
+					referencePointsAbsoluteCoordinates[ref_id][j] = absoluteOffsets[ref_id] + referencePoints[ref_id][j];
+				}
+			}
+		}
+	}
+
+	std::cout << "\nReference frames (" << N_REFERENCE_FRAMES << ") aligned.\n" << std::endl;
+
+
+
+	/////////////////// END OF REFERENCE FRAMES PROCESSING //////////////////////////////////
+
+
+
+	// Pre allocated for efficiency.
+	Mat laplacianBuffer(RGBImages[0].size(), CV_32F);
+	
+
+	Size SR_size(LR_w * UPSCALE_FACTOR, LR_h * UPSCALE_FACTOR);
+	Size SR_insideSquareGrid(nSquareX*SQUARE_SIZE*UPSCALE_FACTOR, nSquareY*SQUARE_SIZE*UPSCALE_FACTOR);
+
+	Mat SR_src(SR_size, CV_32F); // A buffer for the upscaled bayer source image (Nearest neighbor).
+	Mat extractedChannel(SR_size, CV_32F); // A buffer for a channel of SR_src.
+
+	Mat srcRectSubPix(SR_insideSquareGrid, CV_32F);
+	Mat normRectSubPix(SR_insideSquareGrid, CV_32F);
+
+	vector<Mat> stack(3);			 // 1 channel per color
+	vector<Mat> normalizer(3);       // 1 channel per color
+	vector<Mat> LR_bayerMasks(3);			 // 1 channel per color
+	vector<Mat> SR_bayerMasks(3);			 // 1 channel per color
+	vector<Mat> SR_localMasks(3);			 // 1 channel per color
+
+
+	// Initialize the vectors and matrices defined above.
+	{
+		for (int channel = 0; channel < 3; channel++)
+		{
+			stack[channel] = cv::Mat::zeros(SR_insideSquareGrid, CV_32F);
+			normalizer[channel] = cv::Mat::zeros(SR_insideSquareGrid, CV_32F);
+			LR_bayerMasks[channel] = cv::Mat::zeros(Size(LR_w, LR_h), CV_32F);
+			SR_bayerMasks[channel] = cv::Mat::zeros(SR_size, CV_32F);
+			SR_localMasks[channel] = cv::Mat::zeros(SR_size, CV_32F);
+		}
+
+		for (int x = 0; x < LR_w; x++)
+		{
+			for (int y = 0; y < LR_h; y++)
+			{
+				// The bayer pattern is BG . The result of the following computation makes channel = 1 if green, 0 if blue, 2 if red (or blue and red reversed)
+				//					    GR
+				int isGreen = (x % 2) ^ (y % 2); // Bitwise XOR.
+				int channel = isGreen + (1 - isGreen) * 2 * (x % 2);
+
+				LR_bayerMasks[channel].at<float>(y, x) = 1.f;
+			}
+		}
+
+		for (int channel = 0; channel < 3; channel++)
+		{
+			resize(LR_bayerMasks[channel], SR_bayerMasks[channel], SR_bayerMasks[channel].size(), 0, 0, INTER_NEAREST);
+		}
+	}
+
+
+#ifdef _DEBUG
+	int resolution = 10; // sqrt(Bins per pixel)
+	Mat bins = Mat::zeros(Size(resolution*2, resolution*2), CV_8U);
+#endif
+
+
+	// In each image of the sequence, find the LK features of the references, and compute its estimated offset in the absolute referential.
+	for (int i = N_REFERENCE_FRAMES; i < RGBImages.size(); i++)
+	{
+
+		// Barycentre of the offsets of the tracked points across the references. 
+		Point2f currentFrameAbsoluteOffset(.0f, .0f);
+
+		int totalPointsMatched = 0;
+
+		for (int ref_id = 0; ref_id < N_REFERENCE_FRAMES; ref_id++)
+		{
+
+			std::vector<Point2f> potentialPoints;
+
+			// calculate optical flow
+			vector<uchar> status;
+			vector<float> err;
+			TermCriteria criteria = TermCriteria((TermCriteria::COUNT)+(TermCriteria::EPS), 10, 0.03);
+
+			calcOpticalFlowPyrLK(GRAYImages[ref_id], GRAYImages[i], referencePoints[ref_id], potentialPoints, status, err, Size(LK_WINDOW_SIZE, LK_WINDOW_SIZE), LK_PYRAMID_LEVELS, criteria, 0, 1.0E-3);
+
+#ifdef _DEBUG
+			Mat refIm = GRAYImages[ref_id].clone();
+			Mat currIm = GRAYImages[i].clone();
+
+			std::vector<Point2f> deltas(potentialPoints.size());
+#endif
+
+
+			int nMatches = 0;
+
+			for (uint j = 0; j < potentialPoints.size(); j++)
+			{
+				// Select good points
+				if (status[j] == 1 && err[j] < ERR_SEQUENCE_THRESHOLD) {
+					currentFrameAbsoluteOffset += referencePointsAbsoluteCoordinates[ref_id][j] - potentialPoints[j];
+
+					nMatches++;
+
+					// TODO ransac
+
+#ifdef _DEBUG
+					cv::circle(refIm, referencePoints[ref_id][j], 2, 255);
+					cv::circle(currIm, potentialPoints[j], 2, 255);
+
+					deltas[j] =  potentialPoints[j] - referencePoints[ref_id][j];
+#endif
+				}
+			}
+
+			//std::cerr << "nMatches at step " << i << " : " << nMatches << " / " << referencePoints[ref_id].size() << std::endl;
+
+
+			totalPointsMatched += nMatches;
+
+#ifdef _DEBUG
+			int matHalfSize = 100;
+			float multiplier = 40.f;
+			Mat visu = Mat::zeros(Size(matHalfSize*2+1,matHalfSize*2+1), CV_8U);
+			vector<int> _ids(nMatches);
+			{
+				int _m = 0;
+				for (uint j = 0; j < potentialPoints.size(); j++)
+				{
+					if (status[j] == 1 && err[j] < ERR_SEQUENCE_THRESHOLD)
+					{
+						_ids[_m] = j;
+						_m++;
+					}
+				} // ids sorted by ascending err.
+				std::sort(_ids.begin(), _ids.end(),
+					[&err](int id_a, int id_b) {
+						return err[id_a] > err[id_b];
+					});
+			}
+
+
+			for (uint _i = 0; _i < _ids.size(); _i++)
+			{
+				int _j = _ids[_i];
+
+				int _x = (int) (deltas[_j].x * multiplier) + matHalfSize + 1;
+				_x = std::clamp(_x, 0, 2*matHalfSize);
+				int _y = (int) (deltas[_j].y * multiplier) + matHalfSize + 1;
+				_y = std::clamp(_y, 0, 2*matHalfSize);
+				visu.at<uchar>(_y, _x) = (uchar)(255.f * (float)(_i+1) / (float)_ids.size());
+			}
+
+
+			int a = 0;
+
+#endif
+		}
+
+		currentFrameAbsoluteOffset /= (float) totalPointsMatched;
+
+
+
+		// Compute the weights of each pixel, proportional to their sharpness.
+
+		cv::Laplacian(RGBImages[i], laplacianBuffer, CV_32F);
+
+		for (int x = 0; x < nSquareX; x++)
+		{
+			for (int y = 0; y < nSquareY; y++)
+			{
+
+				Rect srcRoi(x * SQUARE_SIZE + SQUARE_GRID_MARGIN - (int)currentFrameAbsoluteOffset.x, y * SQUARE_SIZE + SQUARE_GRID_MARGIN - (int)currentFrameAbsoluteOffset.y, SQUARE_SIZE, SQUARE_SIZE);
+
+				float sharpness;
+				if (srcRoi.x < 0 || srcRoi.y < 0 || srcRoi.x + srcRoi.width >= RGBImages[i].cols || srcRoi.y + srcRoi.height >= RGBImages[i].rows)
+				{
+					sharpness = .0f;
+				}
+				else
+				{
+					Scalar varLaplacian;
+					Scalar meanLaplacian;
+					cv::meanStdDev(RGBImages[i](srcRoi), meanLaplacian, varLaplacian);
+					sharpness = (float)varLaplacian[0]; 
+				}	
+				
+				Rect maskRoi(srcRoi.x * UPSCALE_FACTOR, srcRoi.y * UPSCALE_FACTOR, srcRoi.width * UPSCALE_FACTOR, srcRoi.height * UPSCALE_FACTOR);
+				for (int c = 0; c < 3; c++)
+				{
+					SR_localMasks[c](maskRoi) = SR_bayerMasks[c](maskRoi) * 1.f;
+					//SR_localMasks[c](maskRoi) = SR_bayerMasks[c](maskRoi) * (sharpness + .1f);
+				}
+			}
+		}
+
+
+		// Combine the channels of the current bayer image with the channels of the stack:
+
+
+		Mat bayerIm_32F;
+		bayerImages[i].convertTo(bayerIm_32F, CV_32F);
+		resize(bayerIm_32F, SR_src, SR_size, 0,0, INTER_NEAREST);
+
+		Point2f SRgridOffset((float) (SQUARE_GRID_MARGIN * UPSCALE_FACTOR), (float) (SQUARE_GRID_MARGIN * UPSCALE_FACTOR));
+		Point2f center = SRgridOffset + .5f * (Point2f) SR_insideSquareGrid - (float) UPSCALE_FACTOR * currentFrameAbsoluteOffset;
+
+		for (int c = 0; c < 3; c++)
+		{
+			multiply(SR_src, SR_localMasks[c], extractedChannel);
+
+			// Extract the portion of the current SR channel that falls exactly in the square grid of the absolute referential.
+			getRectSubPix(extractedChannel, SR_insideSquareGrid, center, srcRectSubPix);
+			getRectSubPix(SR_localMasks[c], SR_insideSquareGrid, center, normRectSubPix);
+
+			add(stack[c], srcRectSubPix, stack[c]);
+			add(normalizer[c], normRectSubPix, normalizer[c]);
+		}
+
+
+#ifdef _DEBUG
+		float fracBayerX = 2.f * (float) resolution * currentFrameAbsoluteOffset.x - 2.f * (float) resolution * floorf(currentFrameAbsoluteOffset.x);
+		float fracBayerY = 2.f * (float) resolution * currentFrameAbsoluteOffset.y - 2.f * (float) resolution * floorf(currentFrameAbsoluteOffset.y);
+
+		bins.at<char>((int)fracBayerY, (int)fracBayerX) += 1;
+#endif
+		std::cout << "Processed image " << i  << ", offset " << currentFrameAbsoluteOffset.x << " " << currentFrameAbsoluteOffset.y << std::endl;
+	}
+
+	
+	for (int channel = 0; channel < 3; channel++)
+	{
+		cv::divide(stack[channel], normalizer[channel], stack[channel]);
+	}
+
+
+
+	//  Because openCV doesnt normalize its windows...
+	//for (int channel = 0; channel < 3; channel++) stack[channel] *= 1.f/255.f;
+
+	vector<Mat> deconv8U(3);
+	Mat deconvRes(stack[0].size(), CV_32F);
+	for (int channel = 0; channel < 3; channel++)
+	{
+		//Rect deconvROI = cv::selectROI(stack[1]);
+		//std::cout << "\n SELECTED CONVOLUTION ROI DIMENSIONS: " << deconvROI.x << " " << deconvROI.y << " " << deconvROI.width << " " << deconvROI.height << std::endl;
+		//cv::destroyAllWindows();
+
+		Rect deconvROI(0, 0, stack[channel].cols, stack[channel].rows);
+
+		Mat toBeDeconv = stack[channel](deconvROI);
+
+		const int nSigmas = 4;
+		float sigmas[nSigmas];
+		for (int i = 3; i < nSigmas; i++)
+		{
+			sigmas[i] = (float) UPSCALE_FACTOR * .5f * (1.f + (float) i);
+
+			//deconvRes = LucyRichardson(toBeDeconv, 10, sigmas[i]);
+			deconvRes = LucyRichardson(toBeDeconv, 20, sigmas[i]); 
+			//deconvRes = LucyRichardson(toBeDeconv, 30, sigmas[i]); 
+
+			deconvRes.convertTo(deconv8U[channel], CV_8U);
+
+			//std::string name = "SR_samples\\" + seqName + "_" + std::to_string(UPSCALE_FACTOR) + "x_"
+			//	+ std::to_string((int)RGBImages.size()) + "images_sigma" + std::to_string(sigmas[i]) 
+			//	+ std::to_string(time(0)) + ".bmp";
+			//cv::imwrite(name, deconv8U);
+		}
+	}
+
+	//for (int channel = 0; channel < 3; channel++) stack[channel] *= 255.f;
+
+
+
+	//Mat unsharpMasked = UnsharpMasking(deconv);
+	//Mat equalHist = EqualizeHistogram(deconv8U);
+
+	Mat coloredStack32F, coloredStack8U;
+	Mat coloredDeconv8U;
+
+
+	// Correcting chromatic aberration (tests)
+	//vector<Mat> comp;
+	//for (int offset = 0; offset < 8; offset+= 2)
+	//{
+	//	stack[0] = stack[0](Rect(offset,0, stack[0].cols-offset,stack[0].rows-offset)); // blue
+	//	stack[1] = stack[1](Rect(0,0,	   stack[1].cols-offset,stack[1].rows-offset)); // green
+	//	stack[2] = stack[2](Rect(0,0,	   stack[2].cols-offset,stack[2].rows-offset));	// red
+	//	deconv8U[0] = deconv8U[0](Rect(offset,0, stack[0].cols-offset,stack[0].rows-offset)); // blue
+	//	deconv8U[1] = deconv8U[1](Rect(0,0,	   stack[1].cols-offset,stack[1].rows-offset)); // green
+	//	deconv8U[2] = deconv8U[2](Rect(0,0,	   stack[2].cols-offset,stack[2].rows-offset));	// red
+
+	//	cv::merge(stack, coloredStack32F);
+	//	cv::merge(deconv8U, coloredDeconv8U);
+
+	//	coloredStack32F.convertTo(coloredStack8U, CV_8U);
+
+	//	cvtColor(coloredStack8U, coloredStack8U, COLOR_BGR2RGB);
+	//	cvtColor(coloredDeconv8U, coloredDeconv8U, COLOR_BGR2RGB);
+
+	//	comp.push_back(coloredDeconv8U.clone());
+	//}
+	//__debugbreak();
+
+
+
+	// Correcting chromatic aberration:
+	int offset = 2;
+	stack[0] = stack[0](Rect(offset,0, stack[0].cols-offset,stack[0].rows-offset)); // blue
+	stack[1] = stack[1](Rect(0,0,	   stack[1].cols-offset,stack[1].rows-offset)); // green
+	stack[2] = stack[2](Rect(0,0,	   stack[2].cols-offset,stack[2].rows-offset));	// red
+	deconv8U[0] = deconv8U[0](Rect(offset,0, stack[0].cols-offset,stack[0].rows-offset)); // blue
+	deconv8U[1] = deconv8U[1](Rect(0,0,	   stack[1].cols-offset,stack[1].rows-offset)); // green
+	deconv8U[2] = deconv8U[2](Rect(0,0,	   stack[2].cols-offset,stack[2].rows-offset));	// red
+
+	cv::merge(stack, coloredStack32F);
+	cv::merge(deconv8U, coloredDeconv8U);
+
+	coloredStack32F.convertTo(coloredStack8U, CV_8U);
+
+	cvtColor(coloredStack8U, coloredStack8U, COLOR_BGR2RGB);
+	cvtColor(coloredDeconv8U, coloredDeconv8U, COLOR_BGR2RGB);
+
+	cv::imwrite("stack.bmp", coloredStack8U);
+	cv::imwrite("deconv.bmp", coloredDeconv8U);
+
+	cv::imshow("Stack", coloredStack8U);
+	cv::imshow("Deconvolution", coloredDeconv8U);
+
+	int i = 0;
+	Mat upscaledSrcIm(coloredStack8U.size(), CV_8UC3);
+	Rect srcROI(SQUARE_GRID_MARGIN, SQUARE_GRID_MARGIN, coloredDeconv8U.cols/UPSCALE_FACTOR, coloredDeconv8U.rows/UPSCALE_FACTOR);
+	while (true)
+	{
+		Mat srcIm = RGBImages[i%200](srcROI);
+		resize(srcIm, upscaledSrcIm, upscaledSrcIm.size(), 0, 0, INTER_LINEAR);
+		imshow("Src (bilinear upscale)", upscaledSrcIm);
+		waitKey(50);
+		i++;
+	}
+
+	int keyboard = waitKey(0);
+
+	return coloredStack8U;
 }
 
 

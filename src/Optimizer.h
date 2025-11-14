@@ -29,6 +29,8 @@ public:
 
 	cv::Mat FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, std::vector<cv::Mat> RGBImages);
 
+	cv::Mat WeightedTotalCombination(std::vector<cv::Mat> bayerImages, std::vector<cv::Mat> RGBImages);
+
 	//sigmaG is the variance of the gaussian PSF
 	cv::Mat LucyRichardson(cv::Mat src, int nIterations, float sigmaG);
 
