@@ -21,7 +21,7 @@ using std::chrono::milliseconds;
 using namespace cv;
 using namespace std;
 
-void Optimizer::LoadAndPreProcess(IMAGE_SEQ _imSeq, std::vector<cv::Mat>& dstBayerImgs, std::vector<cv::Mat>& dstRGBImgs)
+void Optimizer::LoadAndPreProcess(IMAGE_SEQ _imSeq, bool showSeq, std::vector<cv::Mat>& dstBayerImgs, std::vector<cv::Mat>& dstRGBImgs)
 {
 	imSeq = _imSeq;
 	std::string folder;
@@ -154,7 +154,7 @@ void Optimizer::LoadAndPreProcess(IMAGE_SEQ _imSeq, std::vector<cv::Mat>& dstBay
 	}
 
 	int i = 0;
-	while (!true)
+	while (showSeq)
 	{
 		imshow("Raws", dstRGBImgs[i%200]);
 		waitKey(50);
@@ -162,22 +162,37 @@ void Optimizer::LoadAndPreProcess(IMAGE_SEQ _imSeq, std::vector<cv::Mat>& dstBay
 	}
 }
 
-std::vector<std::vector<cv::Point2f>> Optimizer::OptFlow(std::vector<cv::Mat> images)
+std::vector<std::vector<cv::Point2f>> Optimizer::OptFlow(std::vector<cv::Mat> RGBImages)
 {
-	cv::Mat reference = images[0];
+	vector<Mat> GRAYImages(RGBImages.size());
 
-	vector<vector<Point2f>> points(images.size());
+	for (int i = 0; i < RGBImages.size(); i++)
+	{
+		cvtColor(RGBImages[i], GRAYImages[i], COLOR_BGR2GRAY);
+	}
+
+	cv::Mat reference = GRAYImages[0];
+
+	vector<vector<Point2f>> points(GRAYImages.size());
 
 	vector<Point2f>& referencePoints = points[0];
 
-	const int MAX_POINTS_TRACKED = 300;
-	const double MIN_DISTANCE = 20.;
-	const double QUALITY_LEVEL = .3; // default .3
-	const int BLOCK_SIZE = 2 * 1 + 1;
-	const int GRADIENT_SIZE = 2 * 1 + 1;
 
-	// Points that are near the edges are likely to disappear from frame to frame due to distortions/vibrations. 
-	const int MARGIN_SIZE = 25;
+	// GOOD FEATURES TO TRACK HYPERPARAMETERS
+	const int MARGIN_SIZE = 10;  // Points that are near the edges are likely to disappear from frame to frame due to distortions/vibrations. We ignore them.
+	const int MAX_POINTS_TRACKED = 100;
+	const double MIN_DISTANCE = 15.;
+	const double QUALITY_LEVEL = .1; // default .3
+	const int BLOCK_SIZE = 2 * 2 + 1;
+	const int GRADIENT_SIZE = 2 * 2 + 1;
+
+	// LUCAS KANADE FLOW MATCHING HYPERPARAMETERS
+	const float ERR_REFERENCE_THRESHOLD = 500.f; 
+	const float ERR_SEQUENCE_THRESHOLD = 500.f;  
+	const int LK_WINDOW_SIZE = 15;
+	const int LK_PYRAMID_LEVELS = 2; // Starts at 0.
+
+
 	Rect roi(MARGIN_SIZE, MARGIN_SIZE, reference.cols - 2 * MARGIN_SIZE, reference.rows - 2 * MARGIN_SIZE);
 
 	// Take first frame and find corners in it
@@ -185,7 +200,7 @@ std::vector<std::vector<cv::Point2f>> Optimizer::OptFlow(std::vector<cv::Mat> im
 	goodFeaturesToTrack(reference(roi), referencePoints, MAX_POINTS_TRACKED, QUALITY_LEVEL, MIN_DISTANCE, Mat(), BLOCK_SIZE, GRADIENT_SIZE, false, 0.04);
 	auto time2 = high_resolution_clock::now();
 	int ms_int = (int)duration_cast<milliseconds>(time2 - time1).count();
-	//std::cout << "\nFinding good features in the first frame took " << ms_int << " ms." << std::endl;
+	std::cout << "\nFinding good features in the first frame took " << ms_int << " ms." << std::endl;
 
 
 
@@ -197,7 +212,7 @@ std::vector<std::vector<cv::Point2f>> Optimizer::OptFlow(std::vector<cv::Mat> im
 	cornerSubPix(reference(roi), referencePoints, winSize, zeroZone, _criteria);
 	time2 = high_resolution_clock::now();
 	ms_int = (int)duration_cast<milliseconds>(time2 - time1).count();
-	//std::cout << "Refining to subpix accuracy took " << ms_int << " ms." << std::endl;
+	std::cout << "Refining to subpix accuracy took " << ms_int << " ms." << std::endl;
 
 	for (int i = 0; i < referencePoints.size(); i++)
 	{
@@ -216,7 +231,7 @@ std::vector<std::vector<cv::Point2f>> Optimizer::OptFlow(std::vector<cv::Mat> im
 	}
 
 
-	for (int i = 1; i < images.size(); i++)
+	for (int i = 1; i < GRAYImages.size(); i++)
 	{
 		// Create a mask image for drawing purposes
 		Mat mask = Mat::zeros(reference.size(), reference.type());
@@ -233,10 +248,11 @@ std::vector<std::vector<cv::Point2f>> Optimizer::OptFlow(std::vector<cv::Mat> im
 		TermCriteria criteria = TermCriteria((TermCriteria::COUNT)+(TermCriteria::EPS), 10, 0.03);
 
 		auto _time1 = high_resolution_clock::now();
-		calcOpticalFlowPyrLK(reference, images[i], referencePoints, potentialPoints, status, err, Size(15, 15), 2, criteria, 0, 1.0E-3);
+		calcOpticalFlowPyrLK(reference, GRAYImages[i], referencePoints, potentialPoints, status, err, Size(LK_WINDOW_SIZE, LK_WINDOW_SIZE), LK_PYRAMID_LEVELS, criteria, 0, 1.0E-3);
 		auto _time2 = high_resolution_clock::now();
 		int _ms_int = (int)duration_cast<milliseconds>(_time2 - _time1).count();
-		//std::cerr << "Matching features took " << _ms_int << " ms." << std::endl;
+		std::cerr << "Matching features in the " << i << "-th frame took " << _ms_int << " ms." << std::endl;
+
 
 		int nMatches = 0;
 		for (uint j = 0; j < potentialPoints.size(); j++)
@@ -258,13 +274,13 @@ std::vector<std::vector<cv::Point2f>> Optimizer::OptFlow(std::vector<cv::Mat> im
 		std::cerr << "nMatches at step " << i << " : " << nMatches << " / " << referencePoints.size() << std::endl;
 
 		Mat img;
-		cv::add(images[i], mask, img);
+		cv::add(GRAYImages[i], mask, img);
 
-		/*imshow("Frame", img);
-		int keyboard = waitKey(100);*/
+		imshow("Frame", img);
+		int keyboard = waitKey(50);
 
-		//if (keyboard == 'q' || keyboard == 27)
-		//	break;
+		if (keyboard == 'q' || keyboard == 27)
+			break;
 
 	}
 
@@ -788,12 +804,19 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, 
 	vector<vector<Point2f>> referencePoints(N_REFERENCE_FRAMES);
 	
 
+	vector<Mat> GRAYImages(RGBImages.size());
+
+	for (int i = 0; i < RGBImages.size(); i++)
+	{
+		cvtColor(RGBImages[i], GRAYImages[i], COLOR_BGR2GRAY);
+	}
+
 	// In the reference frames, find the features that we will track across the image sequence.
 	for (int i = 0; i < N_REFERENCE_FRAMES; i++)
 	{
 		Rect featureFinderROI(MARGIN_SIZE, MARGIN_SIZE, RGBImages[i].cols - 2 * MARGIN_SIZE, RGBImages[i].rows - 2 * MARGIN_SIZE);
 
-		goodFeaturesToTrack(RGBImages[i](featureFinderROI), referencePoints[i], MAX_POINTS_TRACKED, QUALITY_LEVEL, MIN_DISTANCE, Mat(), BLOCK_SIZE, GRADIENT_SIZE, false, 0.04);
+		goodFeaturesToTrack(GRAYImages[i](featureFinderROI), referencePoints[i], MAX_POINTS_TRACKED, QUALITY_LEVEL, MIN_DISTANCE, Mat(), BLOCK_SIZE, GRADIENT_SIZE, false, 0.04);
 
 		//Mat imcl = RGBImages[i](featureFinderROI).clone();
 		//for (int j = 0; j < referencePoints[i].size(); j++)
@@ -805,7 +828,7 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, 
 		Size winSize = Size(BLOCK_SIZE / 2, BLOCK_SIZE / 2);
 		Size zeroZone = Size(-1, -1);
 		TermCriteria _criteria = TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 40, 0.001);
-		cornerSubPix(RGBImages[i](featureFinderROI), referencePoints[i], winSize, zeroZone, _criteria); // I did not notice any benefit from this, but the computational cost seems negligible, so...
+		cornerSubPix(GRAYImages[i](featureFinderROI), referencePoints[i], winSize, zeroZone, _criteria); // I did not notice any benefit from this, but the computational cost seems negligible, so...
 
 		for (int j = 0; j < referencePoints[i].size(); j++)
 		{
@@ -861,7 +884,7 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, 
 				vector<float> err;
 				TermCriteria criteria = TermCriteria((TermCriteria::COUNT)+(TermCriteria::EPS), 10, 0.03);
 
-				calcOpticalFlowPyrLK(RGBImages[ref_id], RGBImages[i], referencePoints[ref_id], potentialPoints, status, err, Size(LK_WINDOW_SIZE, LK_WINDOW_SIZE), LK_PYRAMID_LEVELS, criteria, 0, 1.0E-3);
+				calcOpticalFlowPyrLK(GRAYImages[ref_id], GRAYImages[i], referencePoints[ref_id], potentialPoints, status, err, Size(LK_WINDOW_SIZE, LK_WINDOW_SIZE), LK_PYRAMID_LEVELS, criteria, 0, 1.0E-3);
 
 
 				int nMatches = 0;
@@ -1040,6 +1063,10 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, 
 	// Preallocated for efficiency.
 	Mat currentPerSquareNormalizer = Mat::zeros(Size(nSquareX, nSquareY), CV_32F);
 
+#ifdef _DEBUG
+	vector<Point2f> imOffsets(RGBImages.size());
+#endif
+
 	// In each image of the sequence, find the LK features of the references, and compute for each square patch its estimated offset in the absolute referential.
 	for (int i = N_REFERENCE_FRAMES; i < RGBImages.size(); i++)
 	{
@@ -1060,11 +1087,11 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, 
 			vector<float> err;
 			TermCriteria criteria = TermCriteria((TermCriteria::COUNT)+(TermCriteria::EPS), 10, 0.03);
 
-			calcOpticalFlowPyrLK(RGBImages[ref_id], RGBImages[i], referencePoints[ref_id], potentialPoints, status, err, Size(LK_WINDOW_SIZE, LK_WINDOW_SIZE), LK_PYRAMID_LEVELS, criteria, 0, 1.0E-3);
+			calcOpticalFlowPyrLK(GRAYImages[ref_id], GRAYImages[i], referencePoints[ref_id], potentialPoints, status, err, Size(LK_WINDOW_SIZE, LK_WINDOW_SIZE), LK_PYRAMID_LEVELS, criteria, 0, 1.0E-3);
 
 #ifdef _DEBUG
-			Mat refIm = RGBImages[ref_id].clone();
-			Mat currIm = RGBImages[i].clone();
+			Mat refIm = GRAYImages[ref_id].clone();
+			Mat currIm = GRAYImages[i].clone();
 
 			std::vector<Point2f> deltas(potentialPoints.size());
 #endif
@@ -1171,6 +1198,9 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, 
 
 		currentFrameAbsoluteOffset /= (float) totalPointsMatched;
 
+#ifdef _DEBUG
+		imOffsets[i] = currentFrameAbsoluteOffset;
+#endif
 
 
 		// Compute sharpnesses:
@@ -1265,6 +1295,7 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, 
 
 			Point2i patchTopLeft(x * SQUARE_SIZE + SQUARE_GRID_MARGIN, y * SQUARE_SIZE + SQUARE_GRID_MARGIN);
 			
+#ifdef _DEBUG
 			if (true)
 			{
 				const int upscale = 5;
@@ -1272,9 +1303,44 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, 
 				Mat bigFrag(Size(SQUARE_SIZE * upscale, SQUARE_SIZE * upscale), CV_8U);
 
 				Point2f commonFragCenter( 
-					(float)x * ((float)SQUARE_SIZE + .5f) + (float)SQUARE_GRID_MARGIN,
-					(float)y * ((float)SQUARE_SIZE + .5f) + (float)SQUARE_GRID_MARGIN);
+					((float)x + .5f)* (float)SQUARE_SIZE + (float)SQUARE_GRID_MARGIN,
+					((float)y + .5f)* (float)SQUARE_SIZE + (float)SQUARE_GRID_MARGIN);
 
+				std::cout << x << " " << y << std::endl;
+				std::cout << "Phase correlated (local)" << std::endl;
+				Mat srcPatch;
+				Mat dstPatch;
+				const int S2 = 3;
+				int id0 = ids[0];
+				Point2f squareOffset0 = imOffsets[id0];
+				Rect _ROI0((int) (patchTopLeft.x - squareOffset0.x) - S2, (int) (patchTopLeft.y - squareOffset0.y) - S2, SQUARE_SIZE + 2 *S2, SQUARE_SIZE + 2 *S2);
+				GRAYImages[id0](_ROI0).convertTo(srcPatch, CV_32F);
+				for (int i = 1; i < 50; i++)
+				{
+					int id = ids[i];
+
+
+					Point2f squareOffset = imOffsets[id];
+
+					Rect _ROI( (int) (patchTopLeft.x - squareOffset.x)  - S2, (int) (patchTopLeft.y - squareOffset.y)  - S2, SQUARE_SIZE + 2 *S2, SQUARE_SIZE + 2 *S2);
+
+					
+					GRAYImages[id](_ROI).convertTo(dstPatch, CV_32F);
+
+					Point2d relativeOffset = phaseCorrelate(srcPatch, dstPatch);
+
+					Point2f deltaROI(_ROI.x - _ROI0.x, _ROI.y - _ROI0.y);
+
+					Point2f center = commonFragCenter + deltaROI + (Point2f) relativeOffset;
+					getRectSubPix(RGBImages[id], Size(SQUARE_SIZE,SQUARE_SIZE), center, smallFrag, CV_8U);
+
+					resize(smallFrag, bigFrag, Size(), upscale, upscale);
+
+
+					imshow("frag", bigFrag);
+					waitKey(50);
+				}
+				std::cout << "Stabilized (local)" << std::endl;
 				for (int i = 0; i < 50; i++)
 				{
 
@@ -1299,20 +1365,38 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, 
 
 
 					Point2f squareOffset = perSquareAbsoluteOffset[id].at<Point2f>(y, x);
-					
+
 					Point2f center = commonFragCenter - squareOffset;
-					
+
 					getRectSubPix(RGBImages[id], Size(SQUARE_SIZE,SQUARE_SIZE), center, smallFrag, CV_8U);
 					resize(smallFrag, bigFrag, Size(), upscale, upscale);
-					
 
-					std::cout << s[id] << std::endl;
-					//std::cout << _roi.x << " " << _roi.y << " " << squareOffset.x << " " << squareOffset.y << std::endl;
 
-					
 					imshow("frag", bigFrag);
 					waitKey(50);
 				}
+				std::cout << "Stabilized (global)" << std::endl;
+				for (int i = 0; i < 50; i++)
+				{
+
+					int id = ids[i];
+
+					Point2f squareOffset = imOffsets[id];
+
+					Point2f center = commonFragCenter - squareOffset;
+
+					getRectSubPix(RGBImages[id], Size(SQUARE_SIZE,SQUARE_SIZE), center, smallFrag, CV_8U);
+					resize(smallFrag, bigFrag, Size(), upscale, upscale);
+
+
+					//std::cout << s[id] << std::endl;
+					//std::cout << _roi.x << " " << _roi.y << " " << squareOffset.x << " " << squareOffset.y << std::endl;
+
+
+					imshow("frag", bigFrag);
+					waitKey(50);
+				}
+				std::cout << "Not stabilized" << std::endl;
 				for (int i = 0; i < 50; i++)
 				{
 
@@ -1325,9 +1409,8 @@ cv::Mat Optimizer::FullFrameSequentialMatcher(std::vector<cv::Mat> bayerImages, 
 					imshow("frag", bigFrag);
 					waitKey(50);
 				}
-				std::cout << x << " " << y << std::endl;
 			}
-
+#endif
 
 			for (int i = 0; i < nStackedSquares; i++)
 			{

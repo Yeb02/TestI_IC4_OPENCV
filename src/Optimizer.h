@@ -17,10 +17,12 @@ public:
 	IMAGE_SEQ imSeq;
 	std::string seqName;
 
-	void LoadAndPreProcess(IMAGE_SEQ _imSeq, std::vector<cv::Mat>& dstBayerImgs, std::vector<cv::Mat>& dstRGBImgs);
+	void LoadAndPreProcess(IMAGE_SEQ _imSeq, bool showSeq, std::vector<cv::Mat>& dstBayerImgs, std::vector<cv::Mat>& dstRGBImgs);
 
 	// The returned points are quiet NANs when not found
 	std::vector<std::vector<cv::Point2f>> OptFlow(std::vector<cv::Mat> images);
+
+
 
 	void DelaunayUnwarping(std::vector<cv::Mat> images, std::vector<std::vector<cv::Point2f>> shiftedPoints);
 
